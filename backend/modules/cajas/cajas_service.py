@@ -154,12 +154,12 @@ class CajasService:
 
             income_result = await self.db.execute(text("""
                 SELECT
-                    COALESCE(SUM(m.total), 0) AS total_ingresos,
+                    COALESCE(SUM(GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0)), 0) AS total_ingresos,
                     COALESCE(SUM(m.propina), 0) AS total_propinas,
                     COUNT(*) AS ventas_count,
-                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'efectivo' THEN m.total ELSE 0 END), 0) AS ingresos_efectivo,
-                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'tarjeta' THEN m.total ELSE 0 END), 0) AS ingresos_tarjeta,
-                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'transferencia' THEN m.total ELSE 0 END), 0) AS ingresos_transferencia
+                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'efectivo' THEN GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0) ELSE 0 END), 0) AS ingresos_efectivo,
+                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'tarjeta' THEN GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0) ELSE 0 END), 0) AS ingresos_tarjeta,
+                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'transferencia' THEN GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0) ELSE 0 END), 0) AS ingresos_transferencia
                 FROM movimiento m
                 WHERE m.id_caja = :id_caja
                   AND m.estado IS DISTINCT FROM FALSE

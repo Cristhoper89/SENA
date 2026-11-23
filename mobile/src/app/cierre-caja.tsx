@@ -94,6 +94,7 @@ export default function CierreCajaScreen() {
                 <View style={styles.expectedRow}><ArrowUpRight size={15} color="#6DD3A0" /><Text style={styles.expectedRowLabel}>Ingresos</Text><Text style={styles.expectedRowValue}>{money(summary.totalIngresos)}</Text></View>
                 <View style={styles.expectedRow}><ArrowDownRight size={15} color="#F28C8C" /><Text style={styles.expectedRowLabel}>Egresos y gastos</Text><Text style={[styles.expectedRowValue, styles.expenseColor]}>{money(summary.totalEgresos)}</Text></View>
                 <View style={styles.expectedRow}><Text style={styles.tipMark}>✳</Text><Text style={styles.expectedRowLabel}>Propinas separadas</Text><Text style={styles.expectedRowValue}>{money(summary.propinas)}</Text></View>
+                <View style={styles.expectedRow}><Text style={styles.tipMark}>$</Text><Text style={styles.expectedRowLabel}>Domicilios recaudados (no son ingreso)</Text><Text style={styles.expectedRowValue}>{money(summary.domicilios)}</Text></View>
               </View>
 
               <View style={styles.firstOpenNotice}><Check size={18} color="#E4B45F" /><Text style={styles.firstOpenText}>Al cerrar, la caja quedará cerrada. Para iniciar otro turno tendrás que abrir una nueva caja manualmente.</Text></View>

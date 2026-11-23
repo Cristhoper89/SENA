@@ -73,13 +73,15 @@ function summarizeCaja(caja) {
 	const sales = movementsForCaja(caja);
 	const expenses = expensesForCaja(caja);
 	const income = {efectivo: 0, tarjeta: 0, transferencia: 0, otros: 0};
+	const domicilios = sales.reduce((total, sale) => total + numberValue(sale.domicilio), 0);
 
 	sales.forEach(sale => {
 		const method = String(sale.metodo || "").trim().toLowerCase();
-		if (method === "efectivo") income.efectivo += numberValue(sale.total);
-		else if (method === "tarjeta") income.tarjeta += numberValue(sale.total);
-		else if (method === "transferencia") income.transferencia += numberValue(sale.total);
-		else income.otros += numberValue(sale.total);
+		const saleIncome = Math.max(0, numberValue(sale.total) - numberValue(sale.domicilio));
+		if (method === "efectivo") income.efectivo += saleIncome;
+		else if (method === "tarjeta") income.tarjeta += saleIncome;
+		else if (method === "transferencia") income.transferencia += saleIncome;
+		else income.otros += saleIncome;
 	});
 
 	if (!sales.length) {
@@ -108,6 +110,7 @@ function summarizeCaja(caja) {
 		income,
 		expense,
 		totalIncome,
+		domicilios,
 		totalExpenses,
 		tips,
 		estimatedBalance: numberValue(caja.balance_inicial) + totalIncome - totalExpenses - tips
@@ -129,7 +132,7 @@ function renderCaja(caja) {
 		[
 			"totalIngresos", "totalGastos", "balanceFinal", "ingresoEfectivo",
 			"ingresoTransferencia", "ingresoTarjeta", "ingresoOtros", "balanceInicial",
-			"detalleGastos", "detallePropinas", "totalDescontado"
+			"detalleGastos", "detallePropinas", "detalleDomicilios", "totalDescontado"
 		].forEach(id => { document.getElementById(id).textContent = money(0); });
 		return;
 	}
@@ -151,6 +154,7 @@ function renderCaja(caja) {
 	document.getElementById("balanceInicial").textContent = money(caja.balance_inicial);
 	document.getElementById("detalleGastos").textContent = money(totalExpenses);
 	document.getElementById("detallePropinas").textContent = money(summary.tips);
+	document.getElementById("detalleDomicilios").textContent = money(summary.domicilios);
 	document.getElementById("totalDescontado").textContent = money(totalExpenses + summary.tips);
 
 	status.textContent = isOpen ? `Caja #${caja.id} · Abierta` : `Caja #${caja.id} · Cerrada`;

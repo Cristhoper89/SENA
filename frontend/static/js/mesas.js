@@ -796,7 +796,7 @@ function abrirPedido(mesaId) {
     const referencia = movimientoActual || movimientoDeMesa(mesa);
     campoDomicilio.value = Number(referencia && referencia.domicilio) || 0;
     campoPropina.value = Number(referencia && referencia.propina) || 0;
-    propinaAutomatica = propinaAutomaticaHabilitada();
+    propinaAutomatica = propinaAutomaticaHabilitada() && !esBarra(mesa);
     descuentoProducto.value = "";
     domicilioNombre.value = "";
     domicilioTelefono.value = "";
@@ -863,7 +863,7 @@ function renderMovimientosBarra() {
 
 function seleccionarMovimiento(movimiento) {
     movimientoActual = movimiento;
-    propinaAutomatica = propinaAutomaticaHabilitada();
+    propinaAutomatica = propinaAutomaticaHabilitada() && !esBarra(mesaActual);
     campoPropina.value = Number(movimiento.propina) || 0;
     campoDomicilio.value = Number(movimiento.domicilio) || 0;
     refrescarResumen();
@@ -896,7 +896,7 @@ async function crearMovimientoBarra() {
 
         movimientos = [...movimientos, movimiento];
         movimientoActual = movimiento;
-        propinaAutomatica = propinaAutomaticaHabilitada();
+        propinaAutomatica = propinaAutomaticaHabilitada() && !esBarra(mesaActual);
         campoPropina.value = 0;
         campoDomicilio.value = 0;
 
@@ -982,6 +982,11 @@ function refrescarResumen() {
     // Mientras el usuario no edite la propina manualmente, se mantiene el 10%.
     if (propinaAutomatica) {
         campoPropina.value = propinaAutomaticaValor();
+    }
+    if (propinaEtiqueta) {
+        propinaEtiqueta.textContent = propinaAutomatica && !esBarra(mesaActual)
+            ? `Propina (${porcentajePropina()}%)`
+            : "Propina manual";
     }
     renderLineas();
     campoSubtotal.textContent = formatearPrecio(calcularSubtotal());
@@ -1495,28 +1500,23 @@ btnFinalizarCuenta.addEventListener("click", async () => {
     if (!mesaActual) { return; }
 
     guardarEstadoBotones(true);
-
-    const comprobante = capturarDatosComprobante();
+    const comprobante = esBarra(mesaActual)
+        ? capturarDatosComprobanteBarra()
+        : capturarDatosComprobante();
 
     try {
         const total = calcularTotal();
         const propina = valorInput(campoPropina);
         const domicilio = valorInput(campoDomicilio);
 
-        if (esBarra(mesaActual) && movimientoActual) {
-            await api(`/movimientos/${movimientoActual.id}`, "PUT", {
-                total,
-                propina,
-                domicilio,
-                metodo: "Efectivo"
-            });
-        }
-
         const resultadoCierre = await api(`/mesas/${mesaActual.id}/finalizar`, "POST", {
             total,
             propina,
             domicilio,
-            metodo: "Efectivo"
+            metodo: "Efectivo",
+            ...(esBarra(mesaActual) && movimientoActual
+                ? { id_movimiento: movimientoActual.id }
+                : {})
         });
         comprobante.referencia = comprobante.referencia || (resultadoCierre && resultadoCierre.id);
         comprobante.fecha = new Date();
@@ -1585,6 +1585,47 @@ function capturarDatosComprobante() {
     };
 }
 
+function capturarDatosComprobanteBarra() {
+    const base = capturarDatosComprobante();
+    const lista = movimientosBarra(mesaActual).slice().reverse();
+    const lineas = [];
+    let propina = 0;
+    let domicilio = 0;
+
+    lista.forEach(movimiento => {
+        const esSeleccionado = movimientoActual && movimientoActual.id === movimiento.id;
+        propina += esSeleccionado ? valorInput(campoPropina) : Number(movimiento.propina) || 0;
+        domicilio += esSeleccionado ? valorInput(campoDomicilio) : Number(movimiento.domicilio) || 0;
+        lineas.push(...lineasDeMovimiento(movimiento.id).map(linea => ({
+            ...linea,
+            descuentoPorcentaje: porcentajeLinea(linea),
+            totalConDescuento: totalLinea(linea)
+        })));
+    });
+
+    const subtotal = lineas.reduce((suma, linea) => (
+        suma + (Number(linea.precio_unitario) || 0) * (Number(linea.cantidad) || 0)
+    ), 0);
+    const descuento = lineas.reduce((suma, linea) => (
+        suma + (Number(linea.descuento) || 0) * (Number(linea.cantidad) || 0)
+    ), 0);
+
+    return {
+        ...base,
+        mesa: `${nombreMesa(mesaActual)} - Cuenta unificada`,
+        lineas,
+        subtotal,
+        descuento,
+        propina,
+        domicilio,
+        total: redondear(lineas.reduce((suma, linea) => suma + linea.totalConDescuento, 0) + propina + domicilio),
+        domicilioNombre: "",
+        domicilioTelefono: "",
+        referencia: lista.map(movimiento => movimiento.id).join(", "),
+        tipoComprobante: "FACTURA UNIFICADA DE BARRA"
+    };
+}
+
 async function construirComprobante(datos = capturarDatosComprobante()) {
     const filas = datos.lineas.map(linea => {
         const producto = productos.find(item => item.id === linea.id_producto);
@@ -1623,7 +1664,7 @@ async function construirComprobante(datos = capturarDatosComprobante()) {
                 ${datosEmpresa.telefono ? `<span>Tel: ${esc(datosEmpresa.telefono)}</span>` : ""}
                 ${datosEmpresa.NIT ? `<span>NIT: ${esc(datosEmpresa.NIT)}</span>` : ""}
                 ${datosEmpresa.correo ? `<span>${esc(datosEmpresa.correo)}</span>` : ""}
-                <strong>COMPROBANTE DE VENTA</strong>
+                <strong>${esc(datos.tipoComprobante || "COMPROBANTE DE VENTA")}</strong>
                 <span>INFORMATIVO - NO FISCAL</span>
             </header>
 

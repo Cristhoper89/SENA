@@ -84,6 +84,7 @@ export default function CajaActualScreen() {
             </View>
 
             <View style={styles.tipPanel}><View style={styles.tipIcon}><Sparkles size={17} color="#F5D3A7" /></View><Text style={styles.tipLabel}>Propinas recolectadas</Text><Text style={styles.tipValue}>{money(summary.propinas)}</Text></View>
+            <View style={styles.tipPanel}><View style={styles.tipIcon}><Banknote size={17} color="#F5D3A7" /></View><Text style={styles.tipLabel}>Domicilios recaudados (no son ingreso)</Text><Text style={styles.tipValue}>{money(summary.domicilios)}</Text></View>
 
             <View style={styles.balancePanel}>
               <View style={styles.balanceTop}><Text style={styles.balanceLabel}>Balance estimado</Text><Text style={styles.balanceCaption}>Incluye ingresos, gastos y propinas</Text></View>

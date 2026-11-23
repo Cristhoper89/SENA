@@ -50,6 +50,7 @@ export type CajaResumen = {
   totalIngresos: number;
   totalEgresos: number;
   propinas: number;
+  domicilios: number;
   balanceEstimado: number;
 };
 
@@ -87,13 +88,15 @@ export function summarizeCaja(caja: Caja, movimientos: MovimientoCaja[], gastos:
   ));
   const gastosCaja = gastos.filter((gasto) => gasto.id_caja === caja.id);
   const ingresos = { efectivo: 0, tarjeta: 0, transferencia: 0, otros: 0 };
+  const domicilios = ventas.reduce((sum, venta) => sum + amount(venta.domicilio), 0);
 
   ventas.forEach((venta) => {
     const method = (venta.metodo || '').trim().toLowerCase();
-    if (method === 'efectivo') ingresos.efectivo += amount(venta.total);
-    else if (method === 'tarjeta') ingresos.tarjeta += amount(venta.total);
-    else if (method === 'transferencia') ingresos.transferencia += amount(venta.total);
-    else ingresos.otros += amount(venta.total);
+    const ingresoVenta = Math.max(0, amount(venta.total) - amount(venta.domicilio));
+    if (method === 'efectivo') ingresos.efectivo += ingresoVenta;
+    else if (method === 'tarjeta') ingresos.tarjeta += ingresoVenta;
+    else if (method === 'transferencia') ingresos.transferencia += ingresoVenta;
+    else ingresos.otros += ingresoVenta;
   });
 
   if (ventas.length === 0) {
@@ -123,6 +126,7 @@ export function summarizeCaja(caja: Caja, movimientos: MovimientoCaja[], gastos:
     totalIngresos,
     totalEgresos,
     propinas,
+    domicilios,
     balanceEstimado: amount(caja.balance_inicial) + totalIngresos - totalEgresos - propinas,
   };
 }

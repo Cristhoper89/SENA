@@ -57,10 +57,13 @@ function summarizeCash(caja, movimientos, gastos) {
 	));
 	const cajaGastos = gastos.filter(gasto => Number(gasto.id_caja) === Number(caja.id));
 	const income = sales.length
-		? sales.reduce((total, movimiento) => total + cashFlowNumber(movimiento.total), 0)
+		? sales.reduce((total, movimiento) => (
+		total + Math.max(0, cashFlowNumber(movimiento.total) - cashFlowNumber(movimiento.domicilio))
+		), 0)
 		: cashFlowNumber(caja.ingresos_efectivo)
 			+ cashFlowNumber(caja.ingresos_tarjeta)
 			+ cashFlowNumber(caja.ingresos_transferencia);
+	const domicilios = sales.reduce((total, movimiento) => total + cashFlowNumber(movimiento.domicilio), 0);
 	const tips = sales.length
 		? sales.reduce((total, movimiento) => total + cashFlowNumber(movimiento.propina), 0)
 		: cashFlowNumber(caja.total_propinas);
@@ -72,6 +75,7 @@ function summarizeCash(caja, movimientos, gastos) {
 
 	return {
 		income,
+		domicilios,
 		expenses,
 		tips,
 		balance: cashFlowNumber(caja.balance_inicial) + income - expenses - tips
@@ -95,6 +99,7 @@ function renderCashFlow() {
 		document.getElementById("closeCashHeading").textContent = `Cierre de caja #${activeCash.id}`;
 		document.getElementById("closeCashDescription").textContent = "La caja se cerrará con el balance calculado en el sistema.";
 		document.getElementById("closeCashIncome").textContent = cashFlowMoney(cashSummary.income);
+		document.getElementById("closeCashDomicilios").textContent = cashFlowMoney(cashSummary.domicilios);
 		document.getElementById("closeCashExpenses").textContent = cashFlowMoney(cashSummary.expenses);
 		document.getElementById("closeCashTips").textContent = cashFlowMoney(cashSummary.tips);
 		document.getElementById("closeCashBalance").textContent = cashFlowMoney(cashSummary.balance);

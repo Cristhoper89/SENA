@@ -187,7 +187,7 @@ export default function MesaScreen() {
   const tipPercent = Number(configuracion?.valor_propina) || 0;
   // Mientras el usuario no edite la propina, aplica el porcentaje configurado.
   useEffect(() => {
-    if (!selectedMesa || !autoTip || !configuracion?.propina) return;
+    if (!selectedMesa || selectedMesa.tipo === 'barra' || !autoTip || !configuracion?.propina) return;
     setPropina(round2(subtotal * tipPercent / 100));
   }, [selectedMesa, autoTip, tipPercent, subtotal, configuracion?.propina]);
 
@@ -231,13 +231,13 @@ export default function MesaScreen() {
       ? [...movimientos].filter((movimiento) => movimiento.id_mesa === mesa.id).slice(-1)[0] || null
       : null;
     setSelectedMesa(mesa); setSelectedMovimiento(currentMovement); setSelectedCategory(null);
-    setAutoTip(configuracion?.propina === true); setDiscountInput('');
+    setAutoTip(configuracion?.propina === true && mesa.tipo !== 'barra'); setDiscountInput('');
     setPropina(Number(currentMovement?.propina) || 0); setDomicilio(String(Number(currentMovement?.domicilio) || 0));
   };
 
   const selectBarMovement = (movement: Movimiento) => {
     setSelectedMovimiento(movement);
-    setAutoTip(configuracion?.propina === true);
+    setAutoTip(configuracion?.propina === true && selectedMesa?.tipo !== 'barra');
     setPropina(Number(movement.propina) || 0);
     setDomicilio(String(Number(movement.domicilio) || 0));
   };
@@ -258,7 +258,7 @@ export default function MesaScreen() {
           fecha_hora: new Date().toISOString(),
         }),
       });
-      setMovimientos((current) => [...current, movement]); setSelectedMovimiento(movement); setAutoTip(configuracion?.propina === true); setPropina(0); setDomicilio('0');
+      setMovimientos((current) => [...current, movement]); setSelectedMovimiento(movement); setAutoTip(false); setPropina(0); setDomicilio('0');
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : 'Intenta nuevamente.';
       if (message.toLowerCase().includes('caja abierta')) {
@@ -483,17 +483,19 @@ export default function MesaScreen() {
 
   const saveBill = async (close = false) => {
     if (!selectedMesa) return;
+    const mesa = selectedMesa;
+    const receiptHtml = close ? buildFinalReceiptHtml(mesa) : null;
     try {
       setSaving(true);
       if (close) {
-        await apiRequest(`/mesas/${selectedMesa.id}/finalizar`, {
+        await apiRequest(`/mesas/${mesa.id}/finalizar`, {
           method: 'POST',
           body: JSON.stringify({
             total,
             propina,
             domicilio: Number(domicilio) || 0,
             metodo: 'Efectivo',
-            ...(selectedMesa.tipo === 'barra' && selectedMovimiento
+            ...(mesa.tipo === 'barra' && selectedMovimiento
               ? { id_movimiento: selectedMovimiento.id }
               : {}),
           }),
@@ -501,6 +503,16 @@ export default function MesaScreen() {
         setSelectedMesa(null); setSelectedMovimiento(null);
       }
       await loadData();
+      if (receiptHtml) {
+        try {
+          await Print.printAsync({ html: receiptHtml });
+        } catch (printError) {
+          Alert.alert(
+            'Cuenta finalizada',
+            printError instanceof Error ? `La cuenta se cerró, pero no se pudo imprimir: ${printError.message}` : 'La cuenta se cerró, pero no se pudo imprimir.',
+          );
+        }
+      }
     } catch (requestError) { Alert.alert('No se pudo guardar', requestError instanceof Error ? requestError.message : 'Intenta nuevamente.'); }
     finally { setSaving(false); }
   };
@@ -527,11 +539,81 @@ export default function MesaScreen() {
     }
   };
 
+  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character] || character);
+
+  const billHtml = (
+    title: string,
+    groups: { label: string; lines: Consumo[]; tip: number; delivery: number }[],
+    unified: boolean,
+  ) => {
+    const rows = groups.map((group) => {
+      const groupRows = group.lines.map((line) => {
+        const name = productos.find((item) => item.id === line.id_producto)?.nombre || `Producto ${line.id_producto}`;
+        return `<div class="row"><span>${line.cantidad || 0} x ${escapeHtml(name)}</span><strong>${money(Number(line.subtotal) || 0)}</strong></div>`;
+      }).join('');
+      return `${unified ? `<h3>${escapeHtml(group.label)}</h3>` : ''}${groupRows}`;
+    }).join('');
+    const subtotalAmount = groups.reduce((sum, group) => (
+      sum + group.lines.reduce((lineSum, line) => lineSum + (Number(line.subtotal) || 0), 0)
+    ), 0);
+    const tipAmount = groups.reduce((sum, group) => sum + group.tip, 0);
+    const deliveryAmount = groups.reduce((sum, group) => sum + group.delivery, 0);
+    const totalAmount = subtotalAmount + tipAmount + deliveryAmount;
+
+    return `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+      body{font-family:Arial,sans-serif;color:#111;padding:16px;font-size:14px}
+      h1{text-align:center;font-size:20px}h3{font-size:14px;border-bottom:1px solid #aaa;padding-bottom:5px}
+      .row,.summary{display:flex;justify-content:space-between;gap:12px;padding:5px 0}
+      .summary{border-top:1px solid #aaa;margin-top:8px;padding-top:8px}
+      .total{font-weight:bold;font-size:18px}
+    </style></head><body><h1>${unified ? 'Factura unificada de barra' : 'Cuenta'} ${escapeHtml(title)}</h1>
+      ${rows || '<p>Sin productos registrados</p>'}
+      <div class="summary"><span>Subtotal</span><strong>${money(subtotalAmount)}</strong></div>
+      <div class="row"><span>Propina</span><strong>${money(tipAmount)}</strong></div>
+      <div class="row"><span>Domicilio</span><strong>${money(deliveryAmount)}</strong></div>
+      <div class="row total"><span>Total</span><strong>${money(totalAmount)}</strong></div>
+    </body></html>`;
+  };
+
+  const buildFinalReceiptHtml = (mesa: Mesa) => {
+    const displayName = mesa.nombre || (mesa.tipo === 'barra' ? 'Barra' : `Mesa ${mesa.id}`);
+    if (mesa.tipo !== 'barra') {
+      return billHtml(displayName, [{
+        label: displayName,
+        lines: consumos.filter((consumo) => consumo.id_mov === mesa.id_mov),
+        tip: propina,
+        delivery: Number(domicilio) || 0,
+      }], false);
+    }
+
+    const groups = [...movimientos]
+      .filter((movement) => movement.id_mesa === mesa.id)
+      .sort((first, second) => first.id - second.id)
+      .map((movement) => {
+        const selected = selectedMovimiento?.id === movement.id;
+        return {
+          label: `Cuenta #${movement.id}`,
+          lines: consumos.filter((consumo) => consumo.id_mov === movement.id),
+          tip: selected ? propina : Number(movement.propina) || 0,
+          delivery: selected ? Number(domicilio) || 0 : Number(movement.domicilio) || 0,
+        };
+      });
+    return billHtml(displayName, groups, true);
+  };
+
   const printBill = async () => {
     if (!selectedMesa) return;
     const displayName = selectedMesa.nombre || (selectedMesa.tipo === 'barra' ? 'Barra' : `Mesa ${selectedMesa.id}`);
-    const rows = lineas.map((line) => `${productos.find((item) => item.id === line.id_producto)?.nombre || `Producto ${line.id_producto}`} x${line.cantidad || 0}: ${money(Number(line.subtotal) || 0)}`).join('\n');
-    await Print.printAsync({ html: `<h1>Cuenta ${displayName}</h1><pre>${rows}</pre><p>Subtotal: ${money(subtotal)}</p><p>Propina: ${money(propina)}</p><p>Domicilio: ${money(Number(domicilio) || 0)}</p><h2>Total: ${money(total)}</h2>` });
+    await Print.printAsync({
+      html: billHtml(displayName, [{
+        label: displayName,
+        lines: lineas,
+        tip: propina,
+        delivery: Number(domicilio) || 0,
+      }], false),
+    });
   };
 
   const elapsed = (startedAt?: string | null) => {
@@ -687,9 +769,9 @@ export default function MesaScreen() {
               </View>;
             })}
         </View>
-        <View style={styles.totals}><Text style={styles.totalLine}>Subtotal <Text style={styles.amount}>{money(subtotal)}</Text></Text><View style={styles.editLine}><Text style={styles.totalLine}>{configuracion?.propina ? `Propina (${tipPercent}%)` : 'Propina manual'}</Text><TextInput style={styles.moneyInput} keyboardType="numeric" value={String(propina)} onChangeText={(value) => { setAutoTip(false); setPropina(Number(value) || 0); }} /><TouchableOpacity onPress={() => { setAutoTip(false); setPropina(0); }}><Trash2 size={17} color="#D98672" /></TouchableOpacity></View><View style={styles.editLine}><Text style={styles.totalLine}>Domicilio</Text><TextInput style={styles.moneyInput} keyboardType="numeric" value={domicilio} onChangeText={setDomicilio} /></View><View style={styles.grandTotal}><Text style={styles.grandLabel}>TOTAL A PAGAR</Text><Text style={styles.grandAmount}>{money(total)}</Text></View></View>
+        <View style={styles.totals}><Text style={styles.totalLine}>Subtotal <Text style={styles.amount}>{money(subtotal)}</Text></Text><View style={styles.editLine}><Text style={styles.totalLine}>{configuracion?.propina && selectedMesa?.tipo !== 'barra' ? `Propina (${tipPercent}%)` : 'Propina manual'}</Text><TextInput style={styles.moneyInput} keyboardType="numeric" value={String(propina)} onChangeText={(value) => { setAutoTip(false); setPropina(Number(value) || 0); }} /><TouchableOpacity onPress={() => { setAutoTip(false); setPropina(0); }}><Trash2 size={17} color="#D98672" /></TouchableOpacity></View><View style={styles.editLine}><Text style={styles.totalLine}>Domicilio</Text><TextInput style={styles.moneyInput} keyboardType="numeric" value={domicilio} onChangeText={setDomicilio} /></View><View style={styles.grandTotal}><Text style={styles.grandLabel}>TOTAL A PAGAR</Text><Text style={styles.grandAmount}>{money(total)}</Text></View></View>
       </ScrollView>
-      <View style={styles.actions}><TouchableOpacity style={styles.secondaryButton} onPress={cancelOrder} disabled={saving}><Text style={styles.cancelText}>Cancelar</Text></TouchableOpacity>{canManageBill && <TouchableOpacity style={styles.printButton} onPress={printBill} disabled={saving}><Printer size={18} color="#251D17" /><Text style={styles.printText}>Imprimir</Text></TouchableOpacity>}{canManageBill && <TouchableOpacity style={styles.closeButton} onPress={() => saveBill(true)} disabled={saving}><Text style={styles.closeText}>{saving ? 'Guardando...' : 'Finalizar cuenta'}</Text></TouchableOpacity>}</View>
+      <View style={styles.actions}><View style={styles.actionRow}><TouchableOpacity style={styles.secondaryButton} onPress={cancelOrder} disabled={saving}><Text style={styles.cancelText}>Cancelar</Text></TouchableOpacity>{canManageBill && <TouchableOpacity style={styles.printButton} onPress={printBill} disabled={saving}><Printer size={18} color="#251D17" /><Text style={styles.printText}>Imprimir cuenta</Text></TouchableOpacity>}</View>{canManageBill && <TouchableOpacity style={styles.closeButton} onPress={() => saveBill(true)} disabled={saving}><Text style={styles.closeText}>{saving ? 'Guardando...' : 'Finalizar cuenta'}</Text></TouchableOpacity>}</View>
     </SafeAreaView></Modal>
     <Modal visible={showCancelConfirmation} transparent animationType="fade" onRequestClose={() => setShowCancelConfirmation(false)}>
       <View style={styles.cancelConfirmBackdrop}>
@@ -829,7 +911,7 @@ const styles = StyleSheet.create({
   lineActionButton: { width: 30, height: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: '#604332', borderRadius: 5 },
   lineDeleteButton: { marginLeft: 3, backgroundColor: '#45302A' },
   lineQuantity: { color: '#F5EBDD', minWidth: 20, textAlign: 'center', fontSize: 13, fontWeight: '700' },
-  container: { flex: 1, backgroundColor: '#1D1A17' }, grid: { padding: 16, paddingBottom: 30 }, columns: { gap: 12 }, loader: { marginTop: 40 }, mesaCard: { flex: 1, minHeight: 150, backgroundColor: '#32281F', borderRadius: 12, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: '#45382E' }, activeCard: { borderColor: '#F0B35A' }, mesaLabel: { color: '#B8A99A', fontSize: 12, letterSpacing: 1.5 }, mesaNumber: { color: '#F5EBDD', fontSize: 36, fontWeight: '800', marginTop: 5 }, status: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, marginTop: 10, borderRadius: 4 }, statusActive: { backgroundColor: '#604332' }, statusFree: { backgroundColor: '#29483D' }, statusText: { color: '#F5EBDD', fontSize: 10, fontWeight: '700' }, elapsed: { color: '#F0B35A', fontSize: 11, marginTop: 9 }, empty: { alignItems: 'center', padding: 30 }, emptyText: { color: '#B8A99A' }, error: { color: '#E7A28C', textAlign: 'center' }, retry: { marginTop: 15, backgroundColor: '#F0B35A', padding: 10, borderRadius: 6 }, retryText: { color: '#251D17', fontWeight: '700' }, modal: { flex: 1, backgroundColor: '#1D1A17' }, modalHeader: { padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#45382E' }, modalKicker: { color: '#F0B35A', fontSize: 11, letterSpacing: 1.5 }, modalTitle: { color: '#F5EBDD', fontSize: 27, fontWeight: '800', marginTop: 3 }, activeTime: { paddingHorizontal: 20, paddingTop: 12, flexDirection: 'row', gap: 6, alignItems: 'center' }, activeTimeText: { color: '#C9B9A9' }, modalContent: { padding: 20, paddingBottom: 30 }, sectionTitle: { color: '#F5EBDD', fontSize: 18, fontWeight: '700', marginTop: 22, marginBottom: 12 }, categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, categoryButton: { backgroundColor: '#3A3027', borderColor: '#604D3A', borderWidth: 1, borderRadius: 7, padding: 13, minWidth: '46%' }, categoryText: { color: '#F5EBDD', fontWeight: '600' }, backButton: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 12 }, backText: { color: '#F0B35A', fontWeight: '600' }, productRow: { backgroundColor: '#32281F', borderBottomWidth: 1, borderBottomColor: '#4A3B30', padding: 14, flexDirection: 'row', justifyContent: 'space-between' }, productName: { color: '#F5EBDD', fontWeight: '700' }, productDescription: { color: '#AA9C8D', fontSize: 12, marginTop: 4 }, price: { color: '#F0B35A', fontWeight: '700' }, table: { borderWidth: 1, borderColor: '#45382E', borderRadius: 7, overflow: 'hidden' }, tableHeader: { backgroundColor: '#3A3027', padding: 10, flexDirection: 'row', justifyContent: 'space-between' }, tableRow: { padding: 10, borderTopWidth: 1, borderTopColor: '#45382E', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 5 }, tableCell: { color: '#E5D8C9', fontSize: 12, textAlign: 'right', minWidth: 45 }, itemCell: { flex: 1, textAlign: 'left', minWidth: 80 }, noItems: { color: '#998C80', padding: 16, textAlign: 'center' }, discountBadge: { color: '#F0B35A', fontSize: 11, textAlign: 'right', marginTop: 2 }, productDiscountRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#45382E' }, productDiscountLabel: { color: '#F5EBDD', fontSize: 15, fontWeight: '600' }, productDiscountControl: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1D1A17', borderWidth: 1, borderColor: '#604D3A', borderRadius: 8, paddingHorizontal: 12, minWidth: 110 }, productDiscountField: { flex: 1, color: '#F5EBDD', fontSize: 16, paddingVertical: 10, textAlign: 'right' }, productDiscountSuffix: { color: '#998C80', fontSize: 15, fontWeight: '600', marginLeft: 4 }, productDiscountHint: { color: '#998C80', fontSize: 12, marginTop: 8 }, totals: { marginTop: 18, gap: 10 }, totalLine: { color: '#C9B9A9', fontSize: 14 }, amount: { color: '#F5EBDD' }, editLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, moneyInput: { color: '#F5EBDD', backgroundColor: '#32281F', borderWidth: 1, borderColor: '#604D3A', borderRadius: 5, padding: 7, minWidth: 90, textAlign: 'right' }, grandTotal: { borderTopWidth: 1, borderTopColor: '#70583E', paddingTop: 14, marginTop: 5, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, grandLabel: { color: '#F0B35A', fontWeight: '800', letterSpacing: 1 }, grandAmount: { color: '#F0B35A', fontSize: 22, fontWeight: '800' }, actions: { padding: 14, borderTopWidth: 1, borderTopColor: '#45382E', flexDirection: 'row', gap: 7 }, secondaryButton: { padding: 13, justifyContent: 'center' }, cancelText: { color: '#D98672', fontWeight: '700' }, printButton: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#D9C29A', padding: 13, borderRadius: 6 }, printText: { color: '#251D17', fontWeight: '700' }, closeButton: { flex: 1, backgroundColor: '#F0B35A', padding: 13, borderRadius: 6, alignItems: 'center', justifyContent: 'center' }, closeText: { color: '#251D17', fontWeight: '800' },
+  container: { flex: 1, backgroundColor: '#1D1A17' }, grid: { padding: 16, paddingBottom: 30 }, columns: { gap: 12 }, loader: { marginTop: 40 }, mesaCard: { flex: 1, minHeight: 150, backgroundColor: '#32281F', borderRadius: 12, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: '#45382E' }, activeCard: { borderColor: '#F0B35A' }, mesaLabel: { color: '#B8A99A', fontSize: 12, letterSpacing: 1.5 }, mesaNumber: { color: '#F5EBDD', fontSize: 36, fontWeight: '800', marginTop: 5 }, status: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, marginTop: 10, borderRadius: 4 }, statusActive: { backgroundColor: '#604332' }, statusFree: { backgroundColor: '#29483D' }, statusText: { color: '#F5EBDD', fontSize: 10, fontWeight: '700' }, elapsed: { color: '#F0B35A', fontSize: 11, marginTop: 9 }, empty: { alignItems: 'center', padding: 30 }, emptyText: { color: '#B8A99A' }, error: { color: '#E7A28C', textAlign: 'center' }, retry: { marginTop: 15, backgroundColor: '#F0B35A', padding: 10, borderRadius: 6 }, retryText: { color: '#251D17', fontWeight: '700' }, modal: { flex: 1, backgroundColor: '#1D1A17' }, modalHeader: { padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#45382E' }, modalKicker: { color: '#F0B35A', fontSize: 11, letterSpacing: 1.5 }, modalTitle: { color: '#F5EBDD', fontSize: 27, fontWeight: '800', marginTop: 3 }, activeTime: { paddingHorizontal: 20, paddingTop: 12, flexDirection: 'row', gap: 6, alignItems: 'center' }, activeTimeText: { color: '#C9B9A9' }, modalContent: { padding: 20, paddingBottom: 30 }, sectionTitle: { color: '#F5EBDD', fontSize: 18, fontWeight: '700', marginTop: 22, marginBottom: 12 }, categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, categoryButton: { backgroundColor: '#3A3027', borderColor: '#604D3A', borderWidth: 1, borderRadius: 7, padding: 13, minWidth: '46%' }, categoryText: { color: '#F5EBDD', fontWeight: '600' }, backButton: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 12 }, backText: { color: '#F0B35A', fontWeight: '600' }, productRow: { backgroundColor: '#32281F', borderBottomWidth: 1, borderBottomColor: '#4A3B30', padding: 14, flexDirection: 'row', justifyContent: 'space-between' }, productName: { color: '#F5EBDD', fontWeight: '700' }, productDescription: { color: '#AA9C8D', fontSize: 12, marginTop: 4 }, price: { color: '#F0B35A', fontWeight: '700' }, table: { borderWidth: 1, borderColor: '#45382E', borderRadius: 7, overflow: 'hidden' }, tableHeader: { backgroundColor: '#3A3027', padding: 10, flexDirection: 'row', justifyContent: 'space-between' }, tableRow: { padding: 10, borderTopWidth: 1, borderTopColor: '#45382E', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 5 }, tableCell: { color: '#E5D8C9', fontSize: 12, textAlign: 'right', minWidth: 45 }, itemCell: { flex: 1, textAlign: 'left', minWidth: 80 }, noItems: { color: '#998C80', padding: 16, textAlign: 'center' }, discountBadge: { color: '#F0B35A', fontSize: 11, textAlign: 'right', marginTop: 2 }, productDiscountRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#45382E' }, productDiscountLabel: { color: '#F5EBDD', fontSize: 15, fontWeight: '600' }, productDiscountControl: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1D1A17', borderWidth: 1, borderColor: '#604D3A', borderRadius: 8, paddingHorizontal: 12, minWidth: 110 }, productDiscountField: { flex: 1, color: '#F5EBDD', fontSize: 16, paddingVertical: 10, textAlign: 'right' }, productDiscountSuffix: { color: '#998C80', fontSize: 15, fontWeight: '600', marginLeft: 4 }, productDiscountHint: { color: '#998C80', fontSize: 12, marginTop: 8 },   totals: { marginTop: 18, gap: 10 }, totalLine: { color: '#C9B9A9', fontSize: 14 }, amount: { color: '#F5EBDD' }, editLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, moneyInput: { color: '#F5EBDD', backgroundColor: '#32281F', borderWidth: 1, borderColor: '#604D3A', borderRadius: 5, padding: 7, minWidth: 90, textAlign: 'right' }, grandTotal: { borderTopWidth: 1, borderTopColor: '#70583E', paddingTop: 14, marginTop: 5, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, grandLabel: { color: '#F0B35A', fontWeight: '800', letterSpacing: 1 }, grandAmount: { color: '#F0B35A', fontSize: 22, fontWeight: '800' }, actions: { padding: 14, borderTopWidth: 1, borderTopColor: '#45382E', gap: 8 }, actionRow: { flexDirection: 'row', gap: 7 }, secondaryButton: { flex: 1, padding: 13, justifyContent: 'center', alignItems: 'center' }, cancelText: { color: '#D98672', fontWeight: '700' }, printButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: '#D9C29A', padding: 13, borderRadius: 6 }, printText: { color: '#251D17', fontWeight: '700' }, closeButton: { width: '100%', minHeight: 48, backgroundColor: '#F0B35A', padding: 13, borderRadius: 6, alignItems: 'center', justifyContent: 'center' }, closeText: { color: '#251D17', fontWeight: '800' },
   mesaCardAlt: { backgroundColor: '#32281F', borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: '#45382E', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
   cardHeader: { paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { color: '#F5F5F5', fontSize: 15, fontWeight: '700', letterSpacing: 0.5 },
