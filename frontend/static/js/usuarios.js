@@ -1,4 +1,4 @@
-const EMPLOYEES_API_URL = "https://serviciocontigo.io/api";
+const EMPLOYEES_API_URL = window.CabanaRoutes.apiBaseUrl;
 const STAFF_ROLES = new Set(["Cocina", "Cajero", "Mesero"]);
 
 const employeesTable = document.getElementById("employeesTable");

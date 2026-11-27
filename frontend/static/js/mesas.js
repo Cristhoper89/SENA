@@ -4,13 +4,13 @@
 // Mesa -> Movimiento -> Mesa Consumo
 // ======================================================
 
-const API_URL = "https://serviciocontigo.io/api";
+const API_URL = window.CabanaRoutes.apiBaseUrl;
 const API_URL_STORAGE_KEY = "api_base_url";
 
 if (localStorage.getItem(API_URL_STORAGE_KEY) !== API_URL) {
     localStorage.removeItem("access_token");
     localStorage.setItem(API_URL_STORAGE_KEY, API_URL);
-    window.location.replace("/");
+    window.CabanaRoutes.navigate("/", true);
 }
 
 // ======================================================
@@ -52,6 +52,14 @@ const domicilioDatos = document.getElementById("domicilioDatos");
 const domicilioNombre = document.getElementById("domicilioNombre");
 const domicilioTelefono = document.getElementById("domicilioTelefono");
 const campoTotal = document.getElementById("campoTotal");
+const metodoPagoSelect = document.getElementById("metodoPago");
+const pagoMixto = document.getElementById("pagoMixto");
+const pagoMixtoEstado = document.getElementById("pagoMixtoEstado");
+const pagosMixtosInputs = {
+    Efectivo: document.getElementById("pagoMixtoEfectivo"),
+    Transferencia: document.getElementById("pagoMixtoTransferencia"),
+    Tarjeta: document.getElementById("pagoMixtoTarjeta")
+};
 
 const btnCancelarPedido = document.getElementById("btnCancelarPedido");
 const btnImprimirCuenta = document.getElementById("btnImprimirCuenta");
@@ -360,6 +368,64 @@ function calcularSubtotal() {
 function calcularTotal() {
     return redondear(calcularSubtotal() + valorInput(campoPropina) + valorInput(campoDomicilio));
 }
+
+function actualizarEstadoPagoMixto() {
+    if (!pagoMixto || metodoPagoSelect.value !== "Mixto") {
+        pagoMixto.hidden = true;
+        return;
+    }
+
+    pagoMixto.hidden = false;
+    const total = calcularTotal();
+    const pagos = Object.entries(pagosMixtosInputs)
+        .map(([metodo, input]) => ({metodo, valor: redondear(valorInput(input))}))
+        .filter(pago => pago.valor > 0);
+    const suma = redondear(pagos.reduce((acumulado, pago) => acumulado + pago.valor, 0));
+    const coincide = Math.abs(suma - total) < 0.01;
+    const tieneVariosMetodos = pagos.length >= 2;
+    const restante = redondear(total - suma);
+
+    if (coincide && tieneVariosMetodos) {
+        pagoMixtoEstado.textContent = `Desglose completo: ${formatearPrecio(suma)}`;
+    } else if (!coincide && restante < 0) {
+        pagoMixtoEstado.textContent = `El desglose supera el total por ${formatearPrecio(Math.abs(restante))}.`;
+    } else if (!coincide) {
+        pagoMixtoEstado.textContent = `Falta asignar ${formatearPrecio(restante)}.`;
+    } else {
+        pagoMixtoEstado.textContent = "Distribuya el pago entre al menos dos métodos.";
+    }
+    pagoMixtoEstado.classList.toggle("valido", coincide && tieneVariosMetodos);
+    pagoMixtoEstado.classList.toggle("invalido", !coincide || !tieneVariosMetodos);
+}
+
+function recopilarDatosPago() {
+    const metodo = metodoPagoSelect.value;
+    const total = calcularTotal();
+
+    if (metodo !== "Mixto") {
+        return {metodo, pagos: total > 0 ? [{metodo, valor: total}] : []};
+    }
+
+    const pagos = Object.entries(pagosMixtosInputs)
+        .map(([metodoPago, input]) => ({metodo: metodoPago, valor: redondear(valorInput(input))}))
+        .filter(pago => pago.valor > 0);
+    const suma = redondear(pagos.reduce((acumulado, pago) => acumulado + pago.valor, 0));
+
+    if (pagos.length < 2 || Math.abs(suma - total) >= 0.01) {
+        return null;
+    }
+    return {metodo, pagos};
+}
+
+metodoPagoSelect.addEventListener("change", () => {
+    if (metodoPagoSelect.value === "Mixto" && Object.values(pagosMixtosInputs).every(input => valorInput(input) === 0)) {
+        pagosMixtosInputs.Efectivo.value = calcularTotal();
+    }
+    actualizarEstadoPagoMixto();
+});
+Object.values(pagosMixtosInputs).forEach(input => {
+    input.addEventListener("input", actualizarEstadoPagoMixto);
+});
 
 function propinaAutomaticaHabilitada() {
     return !!configuracion && configuracion.propina === true;
@@ -797,6 +863,8 @@ function abrirPedido(mesaId) {
     campoDomicilio.value = Number(referencia && referencia.domicilio) || 0;
     campoPropina.value = Number(referencia && referencia.propina) || 0;
     propinaAutomatica = propinaAutomaticaHabilitada() && !esBarra(mesa);
+    metodoPagoSelect.value = "Efectivo";
+    Object.values(pagosMixtosInputs).forEach(input => { input.value = 0; });
     descuentoProducto.value = "";
     domicilioNombre.value = "";
     domicilioTelefono.value = "";
@@ -866,6 +934,8 @@ function seleccionarMovimiento(movimiento) {
     propinaAutomatica = propinaAutomaticaHabilitada() && !esBarra(mesaActual);
     campoPropina.value = Number(movimiento.propina) || 0;
     campoDomicilio.value = Number(movimiento.domicilio) || 0;
+    metodoPagoSelect.value = "Efectivo";
+    Object.values(pagosMixtosInputs).forEach(input => { input.value = 0; });
     refrescarResumen();
     mostrarMesas(filtroMesas());
 }
@@ -899,6 +969,8 @@ async function crearMovimientoBarra() {
         propinaAutomatica = propinaAutomaticaHabilitada() && !esBarra(mesaActual);
         campoPropina.value = 0;
         campoDomicilio.value = 0;
+        metodoPagoSelect.value = "Efectivo";
+        Object.values(pagosMixtosInputs).forEach(input => { input.value = 0; });
 
         renderMovimientosBarra();
         refrescarResumen();
@@ -991,6 +1063,7 @@ function refrescarResumen() {
     renderLineas();
     campoSubtotal.textContent = formatearPrecio(calcularSubtotal());
     campoTotal.textContent = formatearPrecio(calcularTotal());
+    actualizarEstadoPagoMixto();
     renderMovimientosBarra();
 }
 
@@ -1499,6 +1572,15 @@ confirmarAccion.addEventListener("click", async () => {
 btnFinalizarCuenta.addEventListener("click", async () => {
     if (!mesaActual) { return; }
 
+    const pago = recopilarDatosPago();
+    if (!pago) {
+        mostrarAviso(
+            "Desglose incompleto",
+            "En un pago mixto, distribuya el total entre al menos dos métodos y verifique que la suma coincida."
+        );
+        return;
+    }
+
     guardarEstadoBotones(true);
     const comprobante = esBarra(mesaActual)
         ? capturarDatosComprobanteBarra()
@@ -1513,7 +1595,8 @@ btnFinalizarCuenta.addEventListener("click", async () => {
             total,
             propina,
             domicilio,
-            metodo: "Efectivo",
+            metodo: pago.metodo,
+            pagos: pago.pagos,
             ...(esBarra(mesaActual) && movimientoActual
                 ? { id_movimiento: movimientoActual.id }
                 : {})
@@ -1579,7 +1662,7 @@ function capturarDatosComprobante() {
         cliente: "CLIENTES EN GENERAL",
         domicilioNombre: domicilio > 0 ? domicilioNombre.value.trim() : "",
         domicilioTelefono: domicilio > 0 ? domicilioTelefono.value.trim() : "",
-        metodo: "Efectivo",
+        metodo: metodoPagoSelect.value,
         fecha: new Date(),
         referencia: movimiento && movimiento.id
     };

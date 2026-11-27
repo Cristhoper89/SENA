@@ -2,6 +2,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from modules.movimientos.movimientos_schema import MovimientoCreate, MovimientoResponse, MovimientoUpdate
+from modules.metodos_pagos.metodo_pago_service import reemplazar_desglose_pago
 from core.logger import logger
 
 class MovimientoService:
@@ -46,7 +47,8 @@ class MovimientoService:
                     FROM caja
                     WHERE LOWER(TRIM(estado::text)) = 'abierta'
                     ORDER BY id DESC
-                    LIMIT 1;
+                    LIMIT 1
+                    FOR UPDATE;
                 """)
             )).first()
             if not caja:
@@ -57,7 +59,8 @@ class MovimientoService:
                 text("""
                     SELECT id
                     FROM caja
-                    WHERE id = :id AND LOWER(TRIM(estado::text)) = 'abierta';
+                    WHERE id = :id AND LOWER(TRIM(estado::text)) = 'abierta'
+                    FOR UPDATE;
                 """),
                 {"id": caja_id},
             )).first()
@@ -100,9 +103,36 @@ class MovimientoService:
         logger.info(f"Usuario '{current_user['username']}' intenta modificar el movimiento ID: {target_movimiento_id}")
 
         # Verificar que el usuario objetivo realmente exista en PostgreSQL
-        check = await self.db.execute(text("SELECT id FROM movimiento WHERE id = :id;"), {"id": target_movimiento_id})
-        if not check.first():
+        check = await self.db.execute(text("""
+            SELECT m.id, m.total, m.estado, m.id_caja
+            FROM movimiento m
+            WHERE m.id = :id;
+        """), {"id": target_movimiento_id})
+        existing_movement = check.mappings().first()
+        if existing_movement is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El movimiento a modificar no existe.")
+
+        if movimiento_update.pagos is not None and movimiento_update.metodo is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Debe indicar el método para guardar su desglose.")
+
+        if movimiento_update.metodo is not None:
+            if existing_movement["estado"] is False or existing_movement["id_caja"] is None:
+                await self.db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Solo se puede cambiar el método de pago de movimientos activos en una caja abierta.",
+                )
+            caja_result = await self.db.execute(
+                text("SELECT estado FROM caja WHERE id = :id FOR UPDATE;"),
+                {"id": existing_movement["id_caja"]},
+            )
+            caja = caja_result.mappings().first()
+            if caja is None or str(caja["estado"]).strip().lower() != "abierta":
+                await self.db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Solo se puede cambiar el método de pago de movimientos activos en una caja abierta.",
+                )
 
         # Construcción dinámica de la sentencia UPDATE con SQL Puro
         update_fields = []
@@ -147,22 +177,31 @@ class MovimientoService:
         if not update_fields:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se enviaron datos para actualizar.")
 
-        caja_filter = ""
+        caja_filters = []
         if movimiento_update.estado is False:
             params["caja_id_guard"] = movimiento_update.id_caja
-            caja_filter = """
+            caja_filters.append("""
                 AND EXISTS (
                     SELECT 1 FROM caja c
                     WHERE c.id = COALESCE(:caja_id_guard, movimiento.id_caja)
                       AND LOWER(TRIM(c.estado::text)) = 'abierta'
                 )
-            """
+            """)
+        if movimiento_update.metodo is not None:
+            caja_filters.append("""
+                AND movimiento.estado IS DISTINCT FROM FALSE
+                AND EXISTS (
+                    SELECT 1 FROM caja c
+                    WHERE c.id = movimiento.id_caja
+                      AND LOWER(TRIM(c.estado::text)) = 'abierta'
+                )
+            """)
 
         # Unificar campos en el string de SQL Nativo
         query_str = f"""
             UPDATE movimiento 
             SET {', '.join(update_fields)} 
-            WHERE id = :id {caja_filter}
+            WHERE id = :id {' '.join(caja_filters)}
             RETURNING id, estado, propina, domicilio, total, id_caja, metodo, id_cliente, id_mesero, "fecha-hora" AS fecha_hora;
         """
         
@@ -171,15 +210,29 @@ class MovimientoService:
             updated_movement = result.mappings().first()
             if updated_movement is None:
                 await self.db.rollback()
+                if movimiento_update.metodo is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No se puede cambiar el método de pago de un movimiento cuya caja no está abierta.",
+                    )
                 if movimiento_update.estado is False:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="No se puede desactivar un movimiento cuya caja no está abierta.",
                     )
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El movimiento a modificar no existe.")
+            if movimiento_update.metodo is not None:
+                await reemplazar_desglose_pago(
+                    self.db,
+                    target_movimiento_id,
+                    movimiento_update.metodo,
+                    movimiento_update.pagos or [],
+                    updated_movement["total"],
+                )
             await self.db.commit()
             return dict(updated_movement)
         except HTTPException:
+            await self.db.rollback()
             raise
         except Exception as e:
             await self.db.rollback()

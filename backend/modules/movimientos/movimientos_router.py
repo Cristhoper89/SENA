@@ -46,6 +46,8 @@ async def update_existing_movimiento(
     """
     if current_user["role_name"] not in ["Administrador", "Cajero", "Mesero"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado. Rol insuficiente.")
+    if movimiento_data.metodo is not None and current_user["role_name"] not in ["Administrador", "Cajero"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo administradores y cajeros pueden cambiar el método de pago.")
     service = MovimientoService(db)
     movimiento = await service.update_movimiento(movimiento_id, movimiento_data, current_user)
     await notify_mesa_change(db)

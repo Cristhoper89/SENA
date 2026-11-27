@@ -1,8 +1,9 @@
-const CAJA_API_URL = "https://serviciocontigo.io/api";
+const CAJA_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 let cajas = [];
 let movimientos = [];
 let gastos = [];
+let pagos = [];
 
 const money = value => new Intl.NumberFormat("es-CO", {
 	style: "currency",
@@ -78,7 +79,19 @@ function summarizeCaja(caja) {
 	sales.forEach(sale => {
 		const method = String(sale.metodo || "").trim().toLowerCase();
 		const saleIncome = Math.max(0, numberValue(sale.total) - numberValue(sale.domicilio));
-		if (method === "efectivo") income.efectivo += saleIncome;
+		const salePayments = pagos.filter(payment => Number(payment.movimiento_id) === Number(sale.id));
+		const paymentTotal = salePayments.reduce((total, payment) => total + numberValue(payment.valor), 0);
+
+		if (paymentTotal > 0) {
+			salePayments.forEach(payment => {
+				const paymentIncome = numberValue(payment.valor) * saleIncome / paymentTotal;
+				const paymentMethod = String(payment.metodo || "").trim().toLowerCase();
+				if (paymentMethod === "efectivo") income.efectivo += paymentIncome;
+				else if (paymentMethod === "tarjeta") income.tarjeta += paymentIncome;
+				else if (paymentMethod === "transferencia") income.transferencia += paymentIncome;
+				else income.otros += paymentIncome;
+			});
+		} else if (method === "efectivo") income.efectivo += saleIncome;
 		else if (method === "tarjeta") income.tarjeta += saleIncome;
 		else if (method === "transferencia") income.transferencia += saleIncome;
 		else income.otros += saleIncome;
@@ -166,20 +179,22 @@ function renderCaja(caja) {
 async function loadCajas() {
 	const token = localStorage.getItem("access_token");
 	if (!token) {
-		window.location.href = "/";
+		window.CabanaRoutes.navigate("/");
 		return;
 	}
 
 	showCajaMessage("");
 	try {
-		const [loadedCajas, loadedMovimientos, loadedGastos] = await Promise.all([
+		const [loadedCajas, loadedMovimientos, loadedGastos, loadedPagos] = await Promise.all([
 			apiCaja("/cajas/"),
 			apiCaja("/movimientos/"),
-			apiCaja("/gastos/")
+			apiCaja("/gastos/"),
+			apiCaja("/metodo_pagos/")
 		]);
 		cajas = Array.isArray(loadedCajas) ? loadedCajas : [];
 		movimientos = Array.isArray(loadedMovimientos) ? loadedMovimientos : [];
 		gastos = Array.isArray(loadedGastos) ? loadedGastos : [];
+		pagos = Array.isArray(loadedPagos) ? loadedPagos : [];
 
 		const active = cajas.slice().sort((first, second) => numberValue(second.id) - numberValue(first.id)).find(isCajaAbierta);
 		renderCaja(active || null);

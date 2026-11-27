@@ -1,4 +1,4 @@
-const CONFIGURATION_API_URL = "https://serviciocontigo.io/api";
+const CONFIGURATION_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 let company = null;
 let systemConfiguration = null;
@@ -110,7 +110,7 @@ function setSystemConfigurationEditing(value) {
 
 async function loadConfiguration() {
     if (!localStorage.getItem("access_token")) {
-        window.location.href = "/";
+        window.CabanaRoutes.navigate("/");
         return;
     }
 

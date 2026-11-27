@@ -1,4 +1,4 @@
-const OPCIONES_API_URL = "https://serviciocontigo.io/api";
+const OPCIONES_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 const gruposLista = document.getElementById("gruposLista");
 const opcionesLista = document.getElementById("opcionesLista");

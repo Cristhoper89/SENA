@@ -1,4 +1,4 @@
-const CAJAS_HISTORY_API_URL = "https://serviciocontigo.io/api";
+const CAJAS_HISTORY_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 let cajaHistory = [];
 let cajaMovements = [];
@@ -97,7 +97,7 @@ function renderCajaHistory() {
 async function loadCajaHistory() {
 	const token = localStorage.getItem("access_token");
 	if (!token) {
-		window.location.href = "/";
+		window.CabanaRoutes.navigate("/");
 		return;
 	}
 

@@ -2,7 +2,7 @@
 // DESBLOQUEO DE CUENTA
 // ======================================================
 
-const API_URL = "https://serviciocontigo.io/api";
+const API_URL = window.CabanaRoutes.apiBaseUrl;
 
 // ======================================================
 // ELEMENTOS
@@ -142,7 +142,7 @@ async function desbloquearCuenta() {
 
             setTimeout(() => {
 
-                window.location.href = "login.html";
+                window.CabanaRoutes.navigate("/login");
 
             }, 2000);
 

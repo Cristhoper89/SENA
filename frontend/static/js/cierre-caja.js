@@ -1,4 +1,4 @@
-const CASH_FLOW_API_URL = "https://serviciocontigo.io/api";
+const CASH_FLOW_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 let activeCash = null;
 let cashSummary = null;
@@ -117,7 +117,7 @@ function renderCashFlow() {
 
 async function loadCashFlow() {
 	if (!localStorage.getItem("access_token")) {
-		window.location.href = "/";
+		window.CabanaRoutes.navigate("/");
 		return;
 	}
 	document.getElementById("cashFlowLoading").hidden = false;
@@ -157,7 +157,7 @@ async function closeActiveCash() {
 	setCashFlowMessage("");
 	try {
 		await cashFlowRequest(`/cajas/${activeCash.id}/cierre`, {method: "POST"});
-		window.location.href = "/caja";
+		window.CabanaRoutes.navigate("/caja");
 	} catch (error) {
 		setCashFlowMessage(error instanceof Error ? error.message : "No fue posible cerrar la caja.", "error");
 		button.disabled = false;
@@ -200,7 +200,7 @@ async function openCash(event) {
 				estado: "abierta"
 			})
 		});
-		window.location.href = "/caja";
+		window.CabanaRoutes.navigate("/caja");
 	} catch (error) {
 		errorElement.textContent = error instanceof Error ? error.message : "No fue posible abrir la caja.";
 		button.disabled = false;

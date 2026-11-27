@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.mailer import enviar_alerta_bajo_stock
 from core.logger import logger
 from modules.mesa.mesa_schema import MesaCreate, MesaUpdate, MesaFinalize
+from modules.metodos_pagos.metodo_pago_service import reemplazar_desglose_pago
 
 class MesaService:
     def __init__(self, db: AsyncSession) -> None:
@@ -197,7 +198,8 @@ class MesaService:
                         FROM caja
                         WHERE LOWER(TRIM(estado::text)) = 'abierta'
                         ORDER BY id DESC
-                        LIMIT 1;
+                        LIMIT 1
+                        FOR UPDATE;
                     """)
                 )).first()
                 if not caja:
@@ -586,6 +588,16 @@ class MesaService:
                 await self.db.execute(
                     text("DELETE FROM barra WHERE id_mesa = :mesa_id;"),
                     {"mesa_id": mesa_id},
+                )
+
+            movimiento_id_pago = mesa["id_mov"] if mesa["tipo"] == "mesa" else data.id_movimiento
+            if movimiento_id_pago is not None:
+                await reemplazar_desglose_pago(
+                    self.db,
+                    movimiento_id_pago,
+                    data.metodo,
+                    data.pagos,
+                    data.total,
                 )
 
             await self.db.execute(text("""

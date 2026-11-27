@@ -2,7 +2,7 @@
 // LOGIN
 // ======================================================
 
-const API_URL = "https://serviciocontigo.io/api"; // web
+const API_URL = window.CabanaRoutes.apiBaseUrl; // web
 //const API_URL = "http://xwho2nzoxgmaxbhkyqnfbiwu.2.24.87.5.sslip.io"; // local
 const API_URL_STORAGE_KEY = "api_base_url";
 
@@ -190,7 +190,7 @@ loginForm.addEventListener("submit", async (e)=>{
 
                 }
 
-                window.location.href=destination;
+                window.CabanaRoutes.navigate(destination);
 
             },1000);
 

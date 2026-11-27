@@ -8,9 +8,19 @@ class MetodoPagoEnum(str, Enum):
     transferencia = "Transferencia"
     tarjeta = "Tarjeta"
 
+class MetodoPagoMovimientoEnum(str, Enum):
+    efectivo = "Efectivo"
+    transferencia = "Transferencia"
+    tarjeta = "Tarjeta"
+    mixto = "Mixto"
+
+class MetodoPagoDetalle(BaseModel):
+    metodo: MetodoPagoEnum
+    valor: Decimal = Field(..., gt=0)
+
 class MetodoPBase(BaseModel):
     movimiento_id: int = Field(..., description="ID del movimiento asociado")
-    valor: Decimal = Field(..., description="Valor del pago")
+    valor: Decimal = Field(..., gt=0, description="Valor del pago")
     metodo: MetodoPagoEnum = Field(..., description="Método o tipo de pago")
 
 class MetodoPCreate(MetodoPBase):

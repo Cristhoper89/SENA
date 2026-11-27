@@ -9,6 +9,42 @@ class CajasService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def validar_sin_pedidos_abiertos(self, caja_id: int) -> None:
+        result = await self.db.execute(text("""
+            SELECT mesa_id, nombre
+            FROM (
+                SELECT DISTINCT
+                    m.id AS mesa_id,
+                    COALESCE(NULLIF(BTRIM(m.nombre), ''), 'Mesa ' || m.id::text) AS nombre
+                FROM mesa m
+                JOIN movimiento mov ON mov.id = m.id_mov
+                WHERE m.tipo = 'mesa'
+                  AND m.id_mov IS NOT NULL
+                  AND mov.id_caja = :caja_id
+
+                UNION
+
+                SELECT DISTINCT
+                    m.id AS mesa_id,
+                    COALESCE(NULLIF(BTRIM(m.nombre), ''), 'Barra ' || m.id::text) AS nombre
+                FROM mesa m
+                JOIN barra b ON b.id_mesa = m.id
+                JOIN movimiento mov ON mov.id = b.id_movimiento
+                WHERE m.tipo = 'barra'
+                  AND mov.id_caja = :caja_id
+            ) AS pedidos_abiertos
+            ORDER BY mesa_id;
+        """), {"caja_id": caja_id})
+        pedidos_abiertos = [row["nombre"] for row in result.mappings().all()]
+        if pedidos_abiertos:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "No se puede cerrar la caja mientras haya pedidos abiertos en: "
+                    f"{', '.join(pedidos_abiertos)}. Finalice o cancele esos pedidos primero."
+                ),
+            )
+
     async def get_all_cajas(self) -> list[dict]:
         logger.info("SQL Nativo: Consultando todos las cajas.")
         query = text("SELECT id, fecha, ingresos_efectivo, ingresos_tarjeta, ingresos_transferencia, egresos_efectivo, egresos_tarjeta, egresos_transferencia, total_propinas, balance_inicial, balance_final, efectivo_contado, diferencia_caja, notas_cierre, estado FROM caja ORDER BY id ASC;")
@@ -115,17 +151,24 @@ class CajasService:
     async def cambiar_estado_caja(self, target_caja_id: int, estado: str) -> dict:
         logger.info(f"Intentando cambiar el estado de la caja ID: {target_caja_id}")
 
-        # Verificar que la caja objetivo realmente exista en PostgreSQL
-        check = await self.db.execute(text("SELECT id FROM caja WHERE id = :id;"), {"id": target_caja_id})
-        if not check.first():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La caja a desactivar no existe.")
-
-        query = text("UPDATE caja SET estado = :estado WHERE id = :id RETURNING id, fecha, ingresos_efectivo, ingresos_tarjeta, ingresos_transferencia, egresos_efectivo, egresos_tarjeta, egresos_transferencia, total_propinas, balance_inicial, balance_final, estado;")
-        
         try:
+            check = await self.db.execute(
+                text("SELECT id FROM caja WHERE id = :id FOR UPDATE;"),
+                {"id": target_caja_id},
+            )
+            if not check.first():
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La caja a desactivar no existe.")
+
+            if str(estado).strip().lower() == "cerrada":
+                await self.validar_sin_pedidos_abiertos(target_caja_id)
+
+            query = text("UPDATE caja SET estado = :estado WHERE id = :id RETURNING id, fecha, ingresos_efectivo, ingresos_tarjeta, ingresos_transferencia, egresos_efectivo, egresos_tarjeta, egresos_transferencia, total_propinas, balance_inicial, balance_final, estado;")
             result = await self.db.execute(query, {"id": target_caja_id, "estado": estado})
             await self.db.commit()
             return dict(result.mappings().first())
+        except HTTPException:
+            await self.db.rollback()
+            raise
         except Exception as e:
             await self.db.rollback()
             logger.error(f"Error crítico al cambiar el estado de la caja: {str(e)}")
@@ -152,18 +195,58 @@ class CajasService:
             if str(current_caja["estado"]).strip().lower() != "abierta":
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La caja ya está cerrada.")
 
+            await self.validar_sin_pedidos_abiertos(target_caja_id)
+
             income_result = await self.db.execute(text("""
+                WITH pagos_por_movimiento AS (
+                    SELECT
+                        movimiento_id,
+                        COUNT(*) AS cantidad_pagos,
+                        SUM(valor) AS total_pagos,
+                        SUM(CASE WHEN metodo = 'Efectivo' THEN valor ELSE 0 END) AS efectivo,
+                        SUM(CASE WHEN metodo = 'Tarjeta' THEN valor ELSE 0 END) AS tarjeta,
+                        SUM(CASE WHEN metodo = 'Transferencia' THEN valor ELSE 0 END) AS transferencia
+                    FROM metodos_pagos
+                    GROUP BY movimiento_id
+                ),
+                ventas AS (
+                    SELECT
+                        m.total,
+                        m.propina,
+                        m.metodo,
+                        GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0) AS ingreso,
+                        COALESCE(p.cantidad_pagos, 0) AS cantidad_pagos,
+                        COALESCE(p.total_pagos, 0) AS total_pagos,
+                        COALESCE(p.efectivo, 0) AS pago_efectivo,
+                        COALESCE(p.tarjeta, 0) AS pago_tarjeta,
+                        COALESCE(p.transferencia, 0) AS pago_transferencia
+                    FROM movimiento m
+                    LEFT JOIN pagos_por_movimiento p ON p.movimiento_id = m.id
+                    WHERE m.id_caja = :id_caja
+                      AND m.estado IS DISTINCT FROM FALSE
+                      AND COALESCE(m.total, 0) > 0
+                )
                 SELECT
-                    COALESCE(SUM(GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0)), 0) AS total_ingresos,
-                    COALESCE(SUM(m.propina), 0) AS total_propinas,
+                    COALESCE(SUM(ingreso), 0) AS total_ingresos,
+                    COALESCE(SUM(propina), 0) AS total_propinas,
                     COUNT(*) AS ventas_count,
-                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'efectivo' THEN GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0) ELSE 0 END), 0) AS ingresos_efectivo,
-                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'tarjeta' THEN GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0) ELSE 0 END), 0) AS ingresos_tarjeta,
-                    COALESCE(SUM(CASE WHEN LOWER(TRIM(m.metodo::text)) = 'transferencia' THEN GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0) ELSE 0 END), 0) AS ingresos_transferencia
-                FROM movimiento m
-                WHERE m.id_caja = :id_caja
-                  AND m.estado IS DISTINCT FROM FALSE
-                  AND COALESCE(m.total, 0) > 0;
+                    COALESCE(SUM(CASE
+                        -- The details include domicilio; distribute caja income proportionally as before.
+                        WHEN cantidad_pagos > 0 THEN pago_efectivo * ingreso / NULLIF(total_pagos, 0)
+                        WHEN LOWER(TRIM(metodo::text)) = 'efectivo' THEN ingreso
+                        ELSE 0
+                    END), 0) AS ingresos_efectivo,
+                    COALESCE(SUM(CASE
+                        WHEN cantidad_pagos > 0 THEN pago_tarjeta * ingreso / NULLIF(total_pagos, 0)
+                        WHEN LOWER(TRIM(metodo::text)) = 'tarjeta' THEN ingreso
+                        ELSE 0
+                    END), 0) AS ingresos_tarjeta,
+                    COALESCE(SUM(CASE
+                        WHEN cantidad_pagos > 0 THEN pago_transferencia * ingreso / NULLIF(total_pagos, 0)
+                        WHEN LOWER(TRIM(metodo::text)) = 'transferencia' THEN ingreso
+                        ELSE 0
+                    END), 0) AS ingresos_transferencia
+                FROM ventas;
             """), {"id_caja": target_caja_id})
             income = income_result.mappings().one()
 

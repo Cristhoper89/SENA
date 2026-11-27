@@ -1,10 +1,11 @@
-const MOVIMIENTOS_API_URL = "https://serviciocontigo.io/api";
+const MOVIMIENTOS_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 let movimientos = [];
 let gastos = [];
 let productos = [];
 let consumos = [];
 let mesas = [];
+let pagos = [];
 let activeTab = "ventas";
 let rango = "week";
 let movimientoExpandido = null;
@@ -15,9 +16,20 @@ let mensajeTimer = null;
 const listaMovimientos = document.getElementById("movList");
 const mensajeMovimientos = document.getElementById("movMessage");
 const modalDesactivar = document.getElementById("desactivarModal");
+const modalMetodoPago = document.getElementById("metodoPagoModal");
 const textoDesactivar = document.getElementById("desactivarTexto");
 const botonRefrescar = document.getElementById("btnRefrescar");
 const botonConfirmar = document.getElementById("confirmarDesactivar");
+const metodoPagoSelect = document.getElementById("metodoPagoSelect");
+const pagoMixtoModal = document.getElementById("pagoMixtoModal");
+const pagoMixtoMensaje = document.getElementById("pagoMixtoMensaje");
+const metodoPagoError = document.getElementById("metodoPagoError");
+const guardarMetodoPago = document.getElementById("guardarMetodoPago");
+const pagosMixtosInputs = {
+	Efectivo: document.getElementById("pagoMixtoModalEfectivo"),
+	Transferencia: document.getElementById("pagoMixtoModalTransferencia"),
+	Tarjeta: document.getElementById("pagoMixtoModalTarjeta")
+};
 
 const RANGOS = {
 	today: "Hoy",
@@ -115,6 +127,10 @@ function cajaEstaAbierta(movimiento) {
 }
 
 function puedeDesactivar(movimiento) {
+	return movimiento.estado !== false && cajaEstaAbierta(movimiento);
+}
+
+function puedeCambiarMetodo(movimiento) {
 	return movimiento.estado !== false && cajaEstaAbierta(movimiento);
 }
 
@@ -216,6 +232,12 @@ function detalleMovimiento(movimiento, lineas) {
 			Desactivar movimiento
 		</button>`
 		: "";
+	const botonCambiarMetodo = puedeCambiarMetodo(movimiento)
+		? `<button class="mov-detail-payment" type="button" data-accion="cambiar-metodo" data-id="${movimiento.id}">
+			<i data-lucide="wallet-cards"></i>
+			Cambiar método de pago
+		</button>`
+		: "";
 
 	return `
 		<div class="mov-detail">
@@ -226,6 +248,7 @@ function detalleMovimiento(movimiento, lineas) {
 				<div class="mov-detail-row"><span>Domicilio</span><strong>${money(movimiento.domicilio)}</strong></div>
 				<div class="mov-detail-row total"><span>Total general</span><strong>${money(movimiento.total)}</strong></div>
 			</div>
+			${botonCambiarMetodo}
 			${botonDesactivar}
 		</div>
 	`;
@@ -327,12 +350,13 @@ async function cargarDatos() {
 	botonRefrescar.disabled = true;
 	renderCargando();
 
-	const [movimientosPeticion, gastosPeticion, productosPeticion, consumosPeticion, mesasPeticion] = await Promise.allSettled([
+	const [movimientosPeticion, gastosPeticion, productosPeticion, consumosPeticion, mesasPeticion, pagosPeticion] = await Promise.allSettled([
 		apiMovimientos("/movimientos/"),
 		apiMovimientos("/gastos/"),
 		apiMovimientos("/productos/"),
 		apiMovimientos("/mesasC/"),
-		apiMovimientos("/mesas/")
+		apiMovimientos("/mesas/"),
+		apiMovimientos("/metodo_pagos/")
 	]);
 
 	movimientos = movimientosPeticion.status === "fulfilled" ? movimientosPeticion.value || [] : [];
@@ -341,8 +365,9 @@ async function cargarDatos() {
 		.filter(producto => producto && producto.id);
 	consumos = consumosPeticion.status === "fulfilled" ? consumosPeticion.value || [] : [];
 	mesas = mesasPeticion.status === "fulfilled" ? mesasPeticion.value || [] : [];
+	pagos = pagosPeticion.status === "fulfilled" ? pagosPeticion.value || [] : [];
 
-	const fallidas = [movimientosPeticion, gastosPeticion, productosPeticion, consumosPeticion, mesasPeticion]
+	const fallidas = [movimientosPeticion, gastosPeticion, productosPeticion, consumosPeticion, mesasPeticion, pagosPeticion]
 		.filter(resultado => resultado.status === "rejected");
 
 	render();
@@ -350,6 +375,110 @@ async function cargarDatos() {
 	botonRefrescar.disabled = false;
 	if (fallidas.length) {
 		mostrarMensaje(fallidas[0].reason?.message || "No se pudieron cargar los datos del historial.", "error");
+	}
+}
+
+function actualizarEstadoMetodoPago() {
+	const metodo = metodoPagoSelect.value;
+	pagoMixtoModal.hidden = metodo !== "Mixto";
+	if (metodo !== "Mixto") {
+		pagoMixtoMensaje.textContent = "";
+		guardarMetodoPago.disabled = guardando;
+		return;
+	}
+
+	const pagosActuales = Object.entries(pagosMixtosInputs)
+		.map(([tipo, input]) => ({metodo: tipo, valor: Math.round(valorNumero(input.value) * 100) / 100}))
+		.filter(pago => pago.valor > 0);
+	const suma = pagosActuales.reduce((total, pago) => total + pago.valor, 0);
+	const totalMovimiento = valorNumero(movimientoPagoPendiente?.total);
+	const coincide = Math.round(suma * 100) === Math.round(totalMovimiento * 100);
+	const variosMetodos = pagosActuales.length >= 2;
+
+	pagoMixtoMensaje.textContent = coincide && variosMetodos
+		? `Desglose completo: ${money(suma)}`
+		: `La suma debe ser ${money(totalMovimiento)} y usar al menos dos métodos.`;
+	pagoMixtoMensaje.className = coincide && variosMetodos ? "valid" : "invalid";
+	guardarMetodoPago.disabled = guardando || !coincide || !variosMetodos;
+}
+
+function abrirCambioMetodo(movimiento) {
+	if (!puedeCambiarMetodo(movimiento)) return;
+
+	movimientoPagoPendiente = movimiento;
+	metodoPagoError.hidden = true;
+	metodoPagoError.textContent = "";
+	metodoPagoSelect.value = movimiento.metodo || "Efectivo";
+	Object.values(pagosMixtosInputs).forEach(input => { input.value = 0; });
+
+	const pagosMovimiento = pagos.filter(pago => Number(pago.movimiento_id) === Number(movimiento.id));
+	if (metodoPagoSelect.value === "Mixto" && pagosMovimiento.length) {
+		pagosMovimiento.forEach(pago => {
+			const input = pagosMixtosInputs[pago.metodo];
+			if (input) input.value = valorNumero(input.value) + valorNumero(pago.valor);
+		});
+	} else if (metodoPagoSelect.value === "Mixto" && valorNumero(movimiento.total) > 0) {
+		pagosMixtosInputs.Efectivo.value = valorNumero(movimiento.total);
+	}
+
+	modalMetodoPago.hidden = false;
+	actualizarEstadoMetodoPago();
+	lucide.createIcons();
+}
+
+async function guardarCambioMetodo() {
+	if (!movimientoPagoPendiente || !puedeCambiarMetodo(movimientoPagoPendiente)) {
+		modalMetodoPago.hidden = true;
+		return;
+	}
+
+	const metodo = metodoPagoSelect.value;
+	const total = valorNumero(movimientoPagoPendiente.total);
+	const detalles = metodo === "Mixto"
+		? Object.entries(pagosMixtosInputs)
+			.map(([tipo, input]) => ({metodo: tipo, valor: Math.round(valorNumero(input.value) * 100) / 100}))
+			.filter(pago => pago.valor > 0)
+		: (total > 0 ? [{metodo, valor: total}] : []);
+
+	if (metodo === "Mixto" && (
+		detalles.length < 2 ||
+		Math.round(detalles.reduce((suma, pago) => suma + pago.valor, 0) * 100) !== Math.round(total * 100)
+	)) {
+		actualizarEstadoMetodoPago();
+		return;
+	}
+
+	guardando = true;
+	guardarMetodoPago.disabled = true;
+	guardarMetodoPago.textContent = "Guardando...";
+	try {
+		await apiMovimientos(`/movimientos/${movimientoPagoPendiente.id}`, "PUT", {
+			metodo,
+			pagos: detalles
+		});
+		movimientos = movimientos.map(movimiento => (
+			movimiento.id === movimientoPagoPendiente.id ? {...movimiento, metodo} : movimiento
+		));
+		pagos = pagos.filter(pago => Number(pago.movimiento_id) !== Number(movimientoPagoPendiente.id));
+		pagos.push(...detalles.map(pago => ({
+			movimiento_id: movimientoPagoPendiente.id,
+			metodo: pago.metodo,
+			valor: pago.valor
+		})));
+		modalMetodoPago.hidden = true;
+		movimientoPagoPendiente = null;
+		metodoPagoError.hidden = true;
+		render();
+		mostrarMensaje("Método de pago actualizado correctamente.", "success");
+	} catch (error) {
+		console.error(error);
+		metodoPagoError.textContent = error.message || "No se pudo cambiar el método de pago.";
+		metodoPagoError.hidden = false;
+	} finally {
+		guardando = false;
+		guardarMetodoPago.disabled = false;
+		guardarMetodoPago.textContent = "Guardar cambio";
+		actualizarEstadoMetodoPago();
 	}
 }
 
@@ -409,6 +538,39 @@ document.getElementById("movList").addEventListener("click", event => {
 		movimientoPendiente = movimiento;
 		textoDesactivar.textContent = `¿Está seguro de que desea desactivar el movimiento #${movimiento.id}?`;
 		modalDesactivar.hidden = false;
+		return;
+	}
+
+	if (accion === "cambiar-metodo") {
+		const movimiento = movimientos.find(item => item.id === id);
+		if (movimiento) abrirCambioMetodo(movimiento);
+	}
+});
+
+metodoPagoSelect.addEventListener("change", () => {
+	metodoPagoError.hidden = true;
+	if (metodoPagoSelect.value === "Mixto" && Object.values(pagosMixtosInputs).every(input => valorNumero(input.value) === 0)) {
+		pagosMixtosInputs.Efectivo.value = valorNumero(movimientoPagoPendiente?.total);
+	}
+	actualizarEstadoMetodoPago();
+});
+Object.values(pagosMixtosInputs).forEach(input => {
+	input.addEventListener("input", () => {
+		metodoPagoError.hidden = true;
+		actualizarEstadoMetodoPago();
+	});
+});
+guardarMetodoPago.addEventListener("click", () => {
+	if (!guardando) guardarCambioMetodo();
+});
+document.getElementById("cancelarMetodoPago").addEventListener("click", () => {
+	modalMetodoPago.hidden = true;
+	movimientoPagoPendiente = null;
+});
+modalMetodoPago.addEventListener("click", event => {
+	if (event.target === modalMetodoPago) {
+		modalMetodoPago.hidden = true;
+		movimientoPagoPendiente = null;
 	}
 });
 
@@ -438,10 +600,14 @@ document.addEventListener("keydown", event => {
 		modalDesactivar.hidden = true;
 		movimientoPendiente = null;
 	}
+	if (event.key === "Escape" && !modalMetodoPago.hidden) {
+		modalMetodoPago.hidden = true;
+		movimientoPagoPendiente = null;
+	}
 });
 
 if (!localStorage.getItem("access_token")) {
-	window.location.href = "/";
+	window.CabanaRoutes.navigate("/");
 } else {
 	lucide.createIcons();
 	cargarDatos();

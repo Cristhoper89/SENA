@@ -4,7 +4,7 @@
 // listar, buscar, filtrar, crear, editar, eliminar y QR.
 // ======================================================
 
-const API_URL = "https://serviciocontigo.io/api";
+const API_URL = window.CabanaRoutes.apiBaseUrl;
 const ROLES_PERMITIDOS = ["Administrador", "Cajero"];
 
 // ======================================================
@@ -87,7 +87,7 @@ async function apiRequest(ruta, opciones = {}) {
 
     if (response.status === 401) {
         localStorage.removeItem("access_token");
-        window.location.href = "/";
+        window.CabanaRoutes.navigate("/");
         throw new Error("La sesión expiró. Inicia sesión nuevamente.");
     }
 
@@ -172,7 +172,7 @@ function mostrarEstado(nombre) {
 
 async function iniciar() {
     if (!localStorage.getItem("access_token")) {
-        window.location.href = "/";
+        window.CabanaRoutes.navigate("/");
         return;
     }
 

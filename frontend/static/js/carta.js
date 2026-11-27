@@ -1,4 +1,4 @@
-const CARTA_API_URL = "https://serviciocontigo.io/api";
+const CARTA_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 let cartaCategories = [];
 let selectedCategoryId = "all";

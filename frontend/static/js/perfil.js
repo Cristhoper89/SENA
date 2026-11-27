@@ -1,4 +1,4 @@
-const PROFILE_API_URL = "https://serviciocontigo.io/api";
+const PROFILE_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 let profile = null;
 let editingProfile = false;
@@ -88,7 +88,7 @@ function displayProfile(data) {
 async function loadProfile() {
 	const token = localStorage.getItem("access_token");
 	if (!token) {
-		window.location.href = "/";
+		window.CabanaRoutes.navigate("/");
 		return;
 	}
 

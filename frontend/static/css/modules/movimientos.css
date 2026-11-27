@@ -65,6 +65,9 @@ body{overflow:auto}
 .mov-detail-deactivate{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:18px;padding:11px;border:1px solid rgba(231,76,60,.5);border-radius:8px;background:rgba(231,76,60,.08);color:#ef8b7e;font:500 12px Manrope,sans-serif;cursor:pointer;transition:var(--transition)}
 .mov-detail-deactivate:hover{background:rgba(231,76,60,.16)}
 .mov-detail-deactivate svg{width:15px}
+.mov-detail-payment{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:18px;padding:11px;border:1px solid rgba(216,168,91,.5);border-radius:8px;background:rgba(216,168,91,.08);color:var(--color-primary);font:500 12px Manrope,sans-serif;cursor:pointer;transition:var(--transition)}
+.mov-detail-payment:hover{background:rgba(216,168,91,.16)}
+.mov-detail-payment svg{width:15px}
 .mov-gasto{background:var(--color-card);border:1px solid var(--color-border);border-radius:var(--radius-card);box-shadow:var(--shadow-card);padding:18px 20px}
 .mov-gasto-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
 .mov-gasto-top strong{font-size:14px}
@@ -88,5 +91,17 @@ body{overflow:auto}
 .confirm-modal p{margin-top:10px;color:var(--color-text-secondary);font-size:12px}
 .confirm-actions{display:flex;gap:10px;margin-top:22px}
 .confirm-actions button{flex:1}
+.metodo-pago-modal{text-align:left}
+.metodo-pago-modal h2,.metodo-pago-modal>p{text-align:center}
+.metodo-pago-modal>label{display:block;margin-top:18px;color:var(--color-text-secondary);font-size:12px}
+.metodo-pago-modal>select,.mov-pago-mixto input{width:100%;box-sizing:border-box;margin-top:7px;padding:10px 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-input);color:var(--color-text);font:inherit}
+.mov-pago-mixto{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+.mov-pago-mixto[hidden]{display:none}
+.mov-pago-mixto label{color:var(--color-text-secondary);font-size:11px}
+.mov-pago-feedback{min-height:16px;margin:10px 0 0!important;font-size:11px}
+.mov-pago-feedback.valid{color:#80c784}
+.mov-pago-feedback.invalid{color:#ef8b7e}
+.mov-pago-error{margin:10px 0 0!important;color:#ef8b7e;font-size:12px}
+.mov-pago-error[hidden]{display:none}
 @media(max-width:900px){.mov-header{flex-direction:column;align-items:flex-start}.mov-actions{width:100%;flex-wrap:wrap}.mov-summary{grid-template-columns:1fr}.mov-range{width:100%}.mov-range-btn{flex:1}}
 @media(max-width:760px){.mov-page{padding:28px 18px}.mov-header h1{font-size:26px}}

@@ -110,7 +110,10 @@
 
 	function isPathAllowed(role, path) {
 		if (!ROLES.includes(role)) return false;
-		return getAllowedPaths(role).has(normalizePath(path));
+		const normalizedPath = global.CabanaRoutes
+			? global.CabanaRoutes.stripBasePath(path)
+			: path;
+		return getAllowedPaths(role).has(normalizePath(normalizedPath));
 	}
 
 	function getHomeRoute(role) {

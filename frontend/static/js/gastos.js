@@ -1,4 +1,4 @@
-const GASTOS_API_URL = "https://serviciocontigo.io/api";
+const GASTOS_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 const gastoForm = document.getElementById("gastoForm");
 const gastoMessage = document.getElementById("gastosMessage");
@@ -149,7 +149,7 @@ gastoForm.addEventListener("submit", async event => {
 });
 
 if (!localStorage.getItem("access_token")) {
-	window.location.href = "/";
+	window.CabanaRoutes.navigate("/");
 } else {
 	loadExpenseOptions().catch(error => {
 		console.error("No se pudieron cargar las opciones del gasto:", error);

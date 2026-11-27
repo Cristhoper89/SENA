@@ -1,4 +1,4 @@
-const MENU_API_URL = "https://serviciocontigo.io/api";
+const MENU_API_URL = window.CabanaRoutes.apiBaseUrl;
 const MENU_HTML_CACHE_KEY = "cabana_menu_html";
 const MENU_USER_CACHE_KEY = "cabana_menu_user";
 const permissions = window.CabanaPermissions;
@@ -50,11 +50,11 @@ function renderMenu(user) {
 	}
 
 	if (!permissions.isPathAllowed(role, window.location.pathname)) {
-		window.location.replace(permissions.getHomeRoute(role));
+		window.CabanaRoutes.navigate(permissions.getHomeRoute(role), true);
 		return;
 	}
 
-	const currentPath = `${window.location.pathname}${window.location.hash}`;
+	const currentPath = `${window.CabanaRoutes.stripBasePath(window.location.pathname)}${window.location.hash}`;
 	sideNav.innerHTML = permissions.getMenuModules(role).map(item => renderMenuItem(item, currentPath)).join("");
 	sideNav.querySelectorAll(".nav-group").forEach(group => {
 		group.addEventListener("toggle", () => {
@@ -68,7 +68,7 @@ function initMenuEvents() {
 	const logoutButton = document.getElementById("logoutButton");
 	logoutButton?.addEventListener("click", () => {
 		localStorage.clear();
-		window.location.href = "/";
+		window.CabanaRoutes.navigate("/");
 	});
 }
 

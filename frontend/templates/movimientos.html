@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="../static/css/base/variables.css">
     <link rel="stylesheet" href="../static/css/base/global.css">
     <link rel="stylesheet" href="../static/css/modules/dashboard.css?v=7">
-    <link rel="stylesheet" href="../static/css/modules/movimientos.css?v=3">
+    <link rel="stylesheet" href="../static/css/modules/movimientos.css?v=4">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
@@ -78,8 +78,34 @@
         </div>
     </div>
 
-    <script src="../static/js/permissions.js?v=2"></script>
-    <script src="../static/js/menu.js?v=15"></script>
-    <script src="../static/js/movimientos.js?v=4"></script>
+    <div class="modal-overlay" id="metodoPagoModal" hidden>
+        <div class="confirm-modal metodo-pago-modal">
+            <h2>Cambiar método de pago</h2>
+            <p>Solo puedes cambiarlo mientras la caja asociada siga abierta.</p>
+            <label for="metodoPagoSelect">Método</label>
+            <select id="metodoPagoSelect">
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Tarjeta">Tarjeta</option>
+                <option value="Mixto">Mixto</option>
+            </select>
+            <div class="mov-pago-mixto" id="pagoMixtoModal" hidden>
+                <label>Efectivo<input type="number" id="pagoMixtoModalEfectivo" min="0" step="0.01" value="0"></label>
+                <label>Transferencia<input type="number" id="pagoMixtoModalTransferencia" min="0" step="0.01" value="0"></label>
+                <label>Tarjeta<input type="number" id="pagoMixtoModalTarjeta" min="0" step="0.01" value="0"></label>
+            </div>
+            <p class="mov-pago-feedback" id="pagoMixtoMensaje" role="status"></p>
+            <p class="mov-pago-error" id="metodoPagoError" role="alert" hidden></p>
+            <div class="confirm-actions">
+                <button class="btn-secondary" id="cancelarMetodoPago" type="button">Cancelar</button>
+                <button class="btn-primary" id="guardarMetodoPago" type="button">Guardar cambio</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../static/js/api-config.js?v=1"></script>
+    <script src="../static/js/permissions.js?v=3"></script>
+    <script src="../static/js/menu.js?v=16"></script>
+    <script src="../static/js/movimientos.js?v=6"></script>
 </body>
 </html>

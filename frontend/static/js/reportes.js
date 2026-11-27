@@ -1,4 +1,4 @@
-const REPORTES_API_URL = "https://serviciocontigo.io/api";
+const REPORTES_API_URL = window.CabanaRoutes.apiBaseUrl;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const PERIOD_LABELS = { all: "Todo", week: "Semana", month: "Mes", year: "Año" };
 

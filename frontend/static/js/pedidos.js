@@ -1,4 +1,4 @@
-const PEDIDOS_API_URL = "https://serviciocontigo.io/api";
+const PEDIDOS_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 let pedidos = [];
 let tabActivo = "pendientes";

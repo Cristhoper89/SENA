@@ -1,4 +1,4 @@
-const INGREDIENTES_API_URL = "https://serviciocontigo.io/api";
+const INGREDIENTES_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 const ingredientesList = document.getElementById("ingredientesList");
 const ingredientesMessage = document.getElementById("ingredientesMessage");

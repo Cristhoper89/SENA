@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal, Optional
 from datetime import datetime
+from modules.metodos_pagos.metodo_pago_schema import MetodoPagoDetalle, MetodoPagoMovimientoEnum
 
 TipoMesa = Literal["barra", "mesa"]
 
@@ -35,6 +36,7 @@ class MesaFinalize(BaseModel):
     propina: float = Field(0, ge=0)
     domicilio: float = Field(0, ge=0)
     total: float = Field(..., ge=0)
-    metodo: str = Field("Efectivo")
+    metodo: MetodoPagoMovimientoEnum = Field(MetodoPagoMovimientoEnum.efectivo)
+    pagos: list[MetodoPagoDetalle] = Field(default_factory=list)
     id_caja: Optional[int] = Field(None, gt=0)
     id_movimiento: Optional[int] = Field(None, gt=0)

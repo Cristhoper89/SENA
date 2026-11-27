@@ -1447,6 +1447,80 @@ body {
 
 }
 
+.metodo-pago-control,
+.pago-mixto {
+
+    display: grid;
+    gap: 8px;
+
+}
+
+.metodo-pago-control label,
+.pago-mixto > strong {
+
+    color: #B8B1A8;
+    font-size: 12px;
+
+}
+
+.metodo-pago-control select,
+.pago-mixto input {
+
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #4A3D31;
+    border-radius: 8px;
+    background: #1D1A17;
+    color: #F5F5F5;
+    font: inherit;
+
+}
+
+.pago-mixto {
+
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 12px;
+    border: 1px solid #4A3D31;
+    border-radius: 10px;
+
+}
+
+.pago-mixto > strong,
+.pago-mixto small {
+
+    grid-column: 1 / -1;
+
+}
+
+.pago-mixto label {
+
+    display: grid;
+    gap: 6px;
+    color: #B8B1A8;
+    font-size: 11px;
+
+}
+
+.pago-mixto small.valido {
+
+    color: #80C784;
+
+}
+
+.pago-mixto small.invalido {
+
+    color: #EF8B7E;
+
+}
+
+.pago-mixto[hidden] {
+
+    display: none;
+
+}
+
 .total-grande {
 
     border-top: 1px solid #45382E;

@@ -1,4 +1,4 @@
-const API_URL = "https://serviciocontigo.io/api";
+const API_URL = window.CabanaRoutes.apiBaseUrl;
 
 // ======================================================
 // ELEMENTOS

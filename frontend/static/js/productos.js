@@ -2,7 +2,7 @@
 // PRODUCTOS
 // ======================================================
 
-const API_URL = "https://serviciocontigo.io/api";
+const API_URL = window.CabanaRoutes.apiBaseUrl;
 
 // ======================================================
 // ELEMENTOS
@@ -309,7 +309,7 @@ async function sincronizarIngredientes(productoId){
     }
 
     const nuevasRelaciones = await Promise.all(
-        creaciones.map(response => response.json())
+        creaciones.map(creacion => creacion.then(response => response.json()))
     );
     relacionesProductoIngrediente = relacionesProductoIngrediente
         .filter(relacion => relacion.id_producto !== Number(productoId) || deseados.includes(relacion.id_ingrediente));

@@ -1,4 +1,4 @@
-const CUSTOMERS_API_URL = "https://serviciocontigo.io/api";
+const CUSTOMERS_API_URL = window.CabanaRoutes.apiBaseUrl;
 
 const customersTable = document.getElementById("customersTable");
 const customerSearch = document.getElementById("customerSearch");
