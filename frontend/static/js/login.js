@@ -2,6 +2,13 @@
 // LOGIN
 // ======================================================
 
+const loginUrl = new URL(window.location.href);
+if (loginUrl.searchParams.has("email") || loginUrl.searchParams.has("password")) {
+    loginUrl.searchParams.delete("email");
+    loginUrl.searchParams.delete("password");
+    window.history.replaceState(null, "", `${loginUrl.pathname}${loginUrl.search}${loginUrl.hash}`);
+}
+
 const API_URL = window.CabanaRoutes.apiBaseUrl; // web
 //const API_URL = "http://xwho2nzoxgmaxbhkyqnfbiwu.2.24.87.5.sslip.io"; // local
 const API_URL_STORAGE_KEY = "api_base_url";
