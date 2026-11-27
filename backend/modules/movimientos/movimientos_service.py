@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +24,121 @@ class MovimientoService:
         """)
         result = await self.db.execute(query)
         return [dict(row) for row in result.mappings().all()]
+
+    async def get_movimientos_paginados(
+        self,
+        fecha_desde: date | None,
+        fecha_hasta: date | None,
+        page: int,
+        page_size: int,
+    ) -> dict:
+        conditions = ["COALESCE(m.total, 0) <> 0"]
+        filter_params = {}
+        if fecha_desde is not None:
+            conditions.append(
+                """m."fecha-hora" >= (CAST(:fecha_desde AS date)::timestamp
+                   AT TIME ZONE 'America/Bogota')"""
+            )
+            filter_params["fecha_desde"] = fecha_desde
+        if fecha_hasta is not None:
+            conditions.append(
+                """m."fecha-hora" < ((CAST(:fecha_hasta AS date) + 1)::timestamp
+                   AT TIME ZONE 'America/Bogota')"""
+            )
+            filter_params["fecha_hasta"] = fecha_hasta
+        where_clause = " AND ".join(conditions)
+
+        summary_result = await self.db.execute(
+            text(f"""
+                SELECT
+                    COUNT(*) AS total,
+                    COALESCE(SUM(m.total) FILTER (
+                        WHERE m.estado IS DISTINCT FROM FALSE
+                    ), 0) AS total_ingresos
+                FROM public.movimiento m
+                WHERE {where_clause};
+            """),
+            filter_params,
+        )
+        summary = summary_result.mappings().one()
+        page_params = {
+            **filter_params,
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
+        }
+
+        rows_result = await self.db.execute(
+            text(f"""
+                WITH pagina_movimientos AS (
+                    SELECT
+                        m.id, m.estado, m.propina, m.domicilio, m.total, m.id_caja,
+                        m.metodo, m.id_cliente, m.id_mesero, m."fecha-hora"
+                    FROM public.movimiento m
+                    WHERE {where_clause}
+                    ORDER BY m."fecha-hora" DESC NULLS LAST, m.id DESC
+                    LIMIT :limit OFFSET :offset
+                )
+                SELECT
+                    m.id, m.estado, m.propina, m.domicilio, m.total, m.id_caja,
+                    m.metodo, m.id_cliente, m.id_mesero,
+                    m."fecha-hora" AS fecha_hora,
+                    b.id_mesa, c.estado AS caja_estado
+                FROM pagina_movimientos m
+                LEFT JOIN LATERAL (
+                    SELECT barra.id_mesa
+                    FROM public.barra
+                    WHERE barra.id_movimiento = m.id
+                    ORDER BY barra.id_mesa
+                    LIMIT 1
+                ) b ON TRUE
+                LEFT JOIN public.caja c ON c.id = m.id_caja
+                ORDER BY m."fecha-hora" DESC NULLS LAST, m.id DESC;
+            """),
+            page_params,
+        )
+        total = summary["total"]
+        return {
+            "items": [dict(row) for row in rows_result.mappings().all()],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "total_ingresos": summary["total_ingresos"],
+        }
+
+    async def get_movimiento_detalle(self, movimiento_id: int) -> dict:
+        exists = await self.db.execute(
+            text("SELECT 1 FROM public.movimiento WHERE id = :id;"),
+            {"id": movimiento_id},
+        )
+        if exists.first() is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="El movimiento no existe.",
+            )
+
+        consumos_result = await self.db.execute(
+            text("""
+                SELECT id, id_producto, cantidad, subtotal, notas
+                FROM public.mesa_consumo
+                WHERE id_mov = :id
+                ORDER BY id ASC;
+            """),
+            {"id": movimiento_id},
+        )
+        pagos_result = await self.db.execute(
+            text("""
+                SELECT id, movimiento_id, valor, metodo
+                FROM public.metodos_pagos
+                WHERE movimiento_id = :id
+                ORDER BY id ASC;
+            """),
+            {"id": movimiento_id},
+        )
+        return {
+            "consumos": [dict(row) for row in consumos_result.mappings().all()],
+            "pagos": [dict(row) for row in pagos_result.mappings().all()],
+        }
 
     async def create_movimiento(self, movimiento_data: MovimientoCreate) -> dict:
         logger.info("SQL Nativo: Insertando movimiento.")

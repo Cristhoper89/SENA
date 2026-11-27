@@ -3,11 +3,22 @@ const MOVIMIENTOS_API_URL = window.CabanaRoutes.apiBaseUrl;
 let movimientos = [];
 let gastos = [];
 let productos = [];
-let consumos = [];
 let mesas = [];
-let pagos = [];
 let activeTab = "ventas";
 let rango = "week";
+let paginaVentas = 1;
+let paginaGastos = 1;
+let tamanoPagina = 25;
+let totalPaginasVentas = 1;
+let totalPaginasGastos = 1;
+let totalVentas = 0;
+let totalGastos = 0;
+let ingresosPeriodo = 0;
+let gastosPeriodo = 0;
+let detallesPorMovimiento = {};
+const detallesCargando = new Set();
+let catalogosCargados = false;
+let solicitudHistorial = 0;
 let movimientoExpandido = null;
 let movimientoPendiente = null;
 let guardando = false;
@@ -25,16 +36,17 @@ const pagoMixtoModal = document.getElementById("pagoMixtoModal");
 const pagoMixtoMensaje = document.getElementById("pagoMixtoMensaje");
 const metodoPagoError = document.getElementById("metodoPagoError");
 const guardarMetodoPago = document.getElementById("guardarMetodoPago");
+const inputFechaDesde = document.getElementById("fechaDesde");
+const inputFechaHasta = document.getElementById("fechaHasta");
+const paginacion = document.getElementById("movPagination");
+const informacionPagina = document.getElementById("movPageInfo");
+const botonPaginaAnterior = document.getElementById("movPagePrevious");
+const botonPaginaSiguiente = document.getElementById("movPageNext");
+const selectorTamanoPagina = document.getElementById("movPageSize");
 const pagosMixtosInputs = {
 	Efectivo: document.getElementById("pagoMixtoModalEfectivo"),
 	Transferencia: document.getElementById("pagoMixtoModalTransferencia"),
 	Tarjeta: document.getElementById("pagoMixtoModalTarjeta")
-};
-
-const RANGOS = {
-	today: "Hoy",
-	week: "Esta semana",
-	month: "Este mes"
 };
 
 function headersMovimientos() {
@@ -92,34 +104,44 @@ function formatearFechaHora(value) {
 	return fecha.toLocaleString("es-CO", {
 		day: "2-digit",
 		month: "short",
+		year: "numeric",
 		hour: "2-digit",
 		minute: "2-digit"
 	});
 }
 
-function fechaEnRango(value, rangoActivo) {
-	if (!value) return true;
+function fechaParaInput(fecha) {
+	const anio = fecha.getFullYear();
+	const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+	const dia = String(fecha.getDate()).padStart(2, "0");
+	return `${anio}-${mes}-${dia}`;
+}
 
-	const fecha = new Date(value);
-	if (Number.isNaN(fecha.getTime())) return true;
-
-	const ahora = new Date();
-	const inicio = new Date(ahora);
-
-	if (rangoActivo === "today") {
-		inicio.setHours(0, 0, 0, 0);
-		return fecha >= inicio;
+function aplicarRango(rangoActivo) {
+	rango = rangoActivo;
+	if (rangoActivo === "all") {
+		inputFechaDesde.value = "";
+		inputFechaHasta.value = "";
+		return;
 	}
 
-	if (rangoActivo === "week") {
-		inicio.setDate(ahora.getDate() - 6);
-		inicio.setHours(0, 0, 0, 0);
-		return fecha >= inicio;
-	}
-
-	inicio.setMonth(ahora.getMonth() - 1);
+	const hoy = new Date();
+	const inicio = new Date(hoy);
 	inicio.setHours(0, 0, 0, 0);
-	return fecha >= inicio;
+	if (rangoActivo === "week") inicio.setDate(inicio.getDate() - 6);
+	if (rangoActivo === "month") inicio.setMonth(inicio.getMonth() - 1);
+	inputFechaDesde.value = fechaParaInput(inicio);
+	inputFechaHasta.value = fechaParaInput(hoy);
+}
+
+function urlHistorial(endpoint, pagina) {
+	const parametros = new URLSearchParams({
+		page: String(pagina),
+		page_size: String(tamanoPagina)
+	});
+	if (inputFechaDesde.value) parametros.set("fecha_desde", inputFechaDesde.value);
+	if (inputFechaHasta.value) parametros.set("fecha_hasta", inputFechaHasta.value);
+	return `${endpoint}?${parametros.toString()}`;
 }
 
 function cajaEstaAbierta(movimiento) {
@@ -151,23 +173,12 @@ function origenMovimiento(movimiento) {
 	return null;
 }
 
-function indiceConsumosPorMovimiento() {
-	return consumos.reduce((acumulador, consumo) => {
-		if (!consumo.id_mov) return acumulador;
-		if (!acumulador[consumo.id_mov]) acumulador[consumo.id_mov] = [];
-		acumulador[consumo.id_mov].push(consumo);
-		return acumulador;
-	}, {});
-}
-
 function movimientosFiltrados() {
-	return movimientos.filter(movimiento => (
-		valorNumero(movimiento.total) !== 0 && fechaEnRango(movimiento.fecha_hora ?? null, rango)
-	));
+	return movimientos.filter(movimiento => valorNumero(movimiento.total) !== 0);
 }
 
 function gastosFiltrados() {
-	return gastos.filter(gasto => fechaEnRango(gasto.fecha_hora ?? null, rango));
+	return gastos;
 }
 
 function mostrarMensaje(texto, tipo = "") {
@@ -187,16 +198,10 @@ function mostrarMensaje(texto, tipo = "") {
 // ======================================================
 
 function renderResumen() {
-	const ventas = movimientosFiltrados();
-	const totalIngresos = ventas
-		.filter(movimiento => movimiento.estado !== false)
-		.reduce((suma, movimiento) => suma + valorNumero(movimiento.total), 0);
-	const totalGastos = gastosFiltrados()
-		.reduce((suma, gasto) => suma + valorNumero(gasto.valor), 0);
-	const balanceNeto = totalIngresos - totalGastos;
+	const balanceNeto = ingresosPeriodo - gastosPeriodo;
 
-	document.getElementById("totalIngresos").textContent = money(totalIngresos);
-	document.getElementById("totalGastos").textContent = money(totalGastos);
+	document.getElementById("totalIngresos").textContent = money(ingresosPeriodo);
+	document.getElementById("totalGastos").textContent = money(gastosPeriodo);
 
 	const balance = document.getElementById("balanceNeto");
 	balance.textContent = money(balanceNeto);
@@ -213,7 +218,27 @@ function renderRango() {
 	document.getElementById("tabGastos").setAttribute("aria-selected", String(activeTab === "gastos"));
 }
 
-function detalleMovimiento(movimiento, lineas) {
+function renderPaginacion() {
+	const paginaActual = activeTab === "ventas" ? paginaVentas : paginaGastos;
+	const totalActual = activeTab === "ventas" ? totalVentas : totalGastos;
+	const totalPaginas = activeTab === "ventas" ? totalPaginasVentas : totalPaginasGastos;
+	const inicio = totalActual === 0 ? 0 : (paginaActual - 1) * tamanoPagina + 1;
+	const fin = Math.min(paginaActual * tamanoPagina, totalActual);
+
+	paginacion.hidden = false;
+	informacionPagina.textContent = `${inicio}-${fin} de ${totalActual} · Página ${paginaActual} de ${totalPaginas}`;
+	botonPaginaAnterior.disabled = paginaActual <= 1;
+	botonPaginaSiguiente.disabled = paginaActual >= totalPaginas;
+	selectorTamanoPagina.value = String(tamanoPagina);
+	selectorTamanoPagina.disabled = false;
+}
+
+function detalleMovimiento(movimiento) {
+	const detalle = detallesPorMovimiento[movimiento.id];
+	if (!detalle) {
+		return `<div class="mov-detail"><p class="mov-detail-empty">${detallesCargando.has(movimiento.id) ? "Cargando detalle..." : "No se pudo cargar el detalle."}</p></div>`;
+	}
+	const lineas = detalle.consumos || [];
 	const subtotal = lineas.reduce((suma, linea) => suma + valorNumero(linea.subtotal), 0);
 
 	const lineasHtml = lineas.length > 0
@@ -254,7 +279,7 @@ function detalleMovimiento(movimiento, lineas) {
 	`;
 }
 
-function tarjetaMovimiento(movimiento, lineas) {
+function tarjetaMovimiento(movimiento) {
 	const expandido = movimientoExpandido === movimiento.id;
 	const anulado = movimiento.estado === false;
 	const origen = origenMovimiento(movimiento);
@@ -278,7 +303,7 @@ function tarjetaMovimiento(movimiento, lineas) {
 				<span class="mov-badge mesero">Mesero: ${movimiento.id_mesero ? esc(String(movimiento.id_mesero).slice(0, 8)) : "Sin asignar"}</span>
 				${movimiento.id_cliente ? `<span class="mov-badge cliente">Cliente: ${esc(String(movimiento.id_cliente).slice(0, 8))}</span>` : ""}
 			</div>
-			${expandido ? detalleMovimiento(movimiento, lineas) : ""}
+			${expandido ? detalleMovimiento(movimiento) : ""}
 		</article>
 	`;
 }
@@ -311,15 +336,13 @@ function renderEstado(titulo, texto, boton = "") {
 }
 
 function renderLista() {
-	const indice = indiceConsumosPorMovimiento();
-
 	if (activeTab === "ventas") {
 		const ventas = movimientosFiltrados();
 		if (!ventas.length) {
 			listaMovimientos.innerHTML = renderEstado("Sin ventas en este rango");
 		} else {
 			listaMovimientos.innerHTML = ventas
-				.map(movimiento => tarjetaMovimiento(movimiento, indice[movimiento.id] || []))
+				.map(movimiento => tarjetaMovimiento(movimiento))
 				.join("");
 		}
 		return;
@@ -334,40 +357,106 @@ function renderLista() {
 function render() {
 	renderRango();
 	renderResumen();
+	renderPaginacion();
 	renderLista();
 	lucide.createIcons();
 }
 
 function renderCargando() {
 	listaMovimientos.innerHTML = renderEstado("Cargando historial...", "");
+	botonPaginaAnterior.disabled = true;
+	botonPaginaSiguiente.disabled = true;
+	selectorTamanoPagina.disabled = true;
 }
 
 // ======================================================
 // DATOS
 // ======================================================
 
+async function cargarDetalleMovimiento(movimientoId) {
+	if (detallesPorMovimiento[movimientoId]) return detallesPorMovimiento[movimientoId];
+	if (detallesCargando.has(movimientoId)) return null;
+
+	detallesCargando.add(movimientoId);
+	if (movimientoExpandido === movimientoId) render();
+	try {
+		const detalle = await apiMovimientos(`/movimientos/${movimientoId}/detalle`);
+		detallesPorMovimiento[movimientoId] = detalle;
+		return detalle;
+	} catch (error) {
+		mostrarMensaje(error.message || "No se pudo cargar el detalle del movimiento.", "error");
+		return null;
+	} finally {
+		detallesCargando.delete(movimientoId);
+		if (movimientoExpandido === movimientoId) render();
+	}
+}
+
+async function expandirMovimiento(movimientoId) {
+	if (movimientoExpandido === movimientoId) {
+		movimientoExpandido = null;
+		render();
+		return;
+	}
+	movimientoExpandido = movimientoId;
+	if (detallesPorMovimiento[movimientoId]) {
+		render();
+	} else {
+		await cargarDetalleMovimiento(movimientoId);
+	}
+}
+
 async function cargarDatos() {
+	const solicitudActual = ++solicitudHistorial;
 	botonRefrescar.disabled = true;
 	renderCargando();
 
-	const [movimientosPeticion, gastosPeticion, productosPeticion, consumosPeticion, mesasPeticion, pagosPeticion] = await Promise.allSettled([
-		apiMovimientos("/movimientos/"),
-		apiMovimientos("/gastos/"),
-		apiMovimientos("/productos/"),
-		apiMovimientos("/mesasC/"),
-		apiMovimientos("/mesas/"),
-		apiMovimientos("/metodo_pagos/")
+	const [historial, catalogos] = await Promise.all([
+		Promise.allSettled([
+			apiMovimientos(urlHistorial("/movimientos/historial", paginaVentas)),
+			apiMovimientos(urlHistorial("/gastos/historial", paginaGastos))
+		]),
+		catalogosCargados
+			? Promise.resolve([])
+			: Promise.allSettled([
+				apiMovimientos("/productos/"),
+				apiMovimientos("/mesas/")
+			])
 	]);
+	if (solicitudActual !== solicitudHistorial) return;
 
-	movimientos = movimientosPeticion.status === "fulfilled" ? movimientosPeticion.value || [] : [];
-	gastos = gastosPeticion.status === "fulfilled" ? gastosPeticion.value || [] : [];
-	productos = (productosPeticion.status === "fulfilled" ? productosPeticion.value || [] : [])
-		.filter(producto => producto && producto.id);
-	consumos = consumosPeticion.status === "fulfilled" ? consumosPeticion.value || [] : [];
-	mesas = mesasPeticion.status === "fulfilled" ? mesasPeticion.value || [] : [];
-	pagos = pagosPeticion.status === "fulfilled" ? pagosPeticion.value || [] : [];
+	const [movimientosPeticion, gastosPeticion] = historial;
+	movimientos = movimientosPeticion.status === "fulfilled" ? movimientosPeticion.value.items : [];
+	gastos = gastosPeticion.status === "fulfilled" ? gastosPeticion.value.items : [];
+	if (movimientosPeticion.status === "fulfilled") {
+		totalVentas = movimientosPeticion.value.total;
+		totalPaginasVentas = movimientosPeticion.value.total_pages;
+		ingresosPeriodo = valorNumero(movimientosPeticion.value.total_ingresos);
+	} else {
+		totalVentas = 0;
+		totalPaginasVentas = 1;
+		ingresosPeriodo = 0;
+	}
+	if (gastosPeticion.status === "fulfilled") {
+		totalGastos = gastosPeticion.value.total;
+		totalPaginasGastos = gastosPeticion.value.total_pages;
+		gastosPeriodo = valorNumero(gastosPeticion.value.total_gastos);
+	} else {
+		totalGastos = 0;
+		totalPaginasGastos = 1;
+		gastosPeriodo = 0;
+	}
 
-	const fallidas = [movimientosPeticion, gastosPeticion, productosPeticion, consumosPeticion, mesasPeticion, pagosPeticion]
+	if (catalogos.length) {
+		const [productosPeticion, mesasPeticion] = catalogos;
+		productos = productosPeticion.status === "fulfilled"
+			? (productosPeticion.value || []).filter(producto => producto && producto.id)
+			: [];
+		mesas = mesasPeticion.status === "fulfilled" ? mesasPeticion.value || [] : [];
+		catalogosCargados = catalogos.every(resultado => resultado.status === "fulfilled");
+	}
+
+	const fallidas = [movimientosPeticion, gastosPeticion, ...catalogos]
 		.filter(resultado => resultado.status === "rejected");
 
 	render();
@@ -375,6 +464,8 @@ async function cargarDatos() {
 	botonRefrescar.disabled = false;
 	if (fallidas.length) {
 		mostrarMensaje(fallidas[0].reason?.message || "No se pudieron cargar los datos del historial.", "error");
+	} else {
+		mostrarMensaje("");
 	}
 }
 
@@ -402,8 +493,10 @@ function actualizarEstadoMetodoPago() {
 	guardarMetodoPago.disabled = guardando || !coincide || !variosMetodos;
 }
 
-function abrirCambioMetodo(movimiento) {
+async function abrirCambioMetodo(movimiento) {
 	if (!puedeCambiarMetodo(movimiento)) return;
+	const detalle = await cargarDetalleMovimiento(movimiento.id);
+	if (!detalle) return;
 
 	movimientoPagoPendiente = movimiento;
 	metodoPagoError.hidden = true;
@@ -411,7 +504,7 @@ function abrirCambioMetodo(movimiento) {
 	metodoPagoSelect.value = movimiento.metodo || "Efectivo";
 	Object.values(pagosMixtosInputs).forEach(input => { input.value = 0; });
 
-	const pagosMovimiento = pagos.filter(pago => Number(pago.movimiento_id) === Number(movimiento.id));
+	const pagosMovimiento = detalle.pagos || [];
 	if (metodoPagoSelect.value === "Mixto" && pagosMovimiento.length) {
 		pagosMovimiento.forEach(pago => {
 			const input = pagosMixtosInputs[pago.metodo];
@@ -459,12 +552,14 @@ async function guardarCambioMetodo() {
 		movimientos = movimientos.map(movimiento => (
 			movimiento.id === movimientoPagoPendiente.id ? {...movimiento, metodo} : movimiento
 		));
-		pagos = pagos.filter(pago => Number(pago.movimiento_id) !== Number(movimientoPagoPendiente.id));
-		pagos.push(...detalles.map(pago => ({
-			movimiento_id: movimientoPagoPendiente.id,
-			metodo: pago.metodo,
-			valor: pago.valor
-		})));
+		detallesPorMovimiento[movimientoPagoPendiente.id] = {
+			...(detallesPorMovimiento[movimientoPagoPendiente.id] || {consumos: []}),
+			pagos: detalles.map(pago => ({
+				movimiento_id: movimientoPagoPendiente.id,
+				metodo: pago.metodo,
+				valor: pago.valor
+			}))
+		};
 		modalMetodoPago.hidden = true;
 		movimientoPagoPendiente = null;
 		metodoPagoError.hidden = true;
@@ -515,8 +610,45 @@ async function desactivarMovimiento() {
 document.getElementById("movRange").addEventListener("click", event => {
 	const boton = event.target.closest("[data-range]");
 	if (!boton) return;
-	rango = boton.dataset.range;
-	render();
+	aplicarRango(boton.dataset.range);
+	paginaVentas = 1;
+	paginaGastos = 1;
+	movimientoExpandido = null;
+	cargarDatos();
+});
+
+document.getElementById("btnFiltrarFechas").addEventListener("click", () => {
+	if (inputFechaDesde.value && inputFechaHasta.value && inputFechaDesde.value > inputFechaHasta.value) {
+		mostrarMensaje("La fecha inicial no puede ser posterior a la fecha final.", "error");
+		return;
+	}
+	rango = "custom";
+	paginaVentas = 1;
+	paginaGastos = 1;
+	movimientoExpandido = null;
+	cargarDatos();
+});
+
+botonPaginaAnterior.addEventListener("click", () => {
+	if (activeTab === "ventas" && paginaVentas > 1) paginaVentas -= 1;
+	if (activeTab === "gastos" && paginaGastos > 1) paginaGastos -= 1;
+	movimientoExpandido = null;
+	cargarDatos();
+});
+
+botonPaginaSiguiente.addEventListener("click", () => {
+	if (activeTab === "ventas" && paginaVentas < totalPaginasVentas) paginaVentas += 1;
+	if (activeTab === "gastos" && paginaGastos < totalPaginasGastos) paginaGastos += 1;
+	movimientoExpandido = null;
+	cargarDatos();
+});
+
+selectorTamanoPagina.addEventListener("change", () => {
+	tamanoPagina = Number(selectorTamanoPagina.value);
+	paginaVentas = 1;
+	paginaGastos = 1;
+	movimientoExpandido = null;
+	cargarDatos();
 });
 
 document.getElementById("movList").addEventListener("click", event => {
@@ -527,8 +659,7 @@ document.getElementById("movList").addEventListener("click", event => {
 	const id = Number(boton.dataset.id);
 
 	if (accion === "expandir") {
-		movimientoExpandido = movimientoExpandido === id ? null : id;
-		render();
+		expandirMovimiento(id);
 		return;
 	}
 
@@ -609,6 +740,7 @@ document.addEventListener("keydown", event => {
 if (!localStorage.getItem("access_token")) {
 	window.CabanaRoutes.navigate("/");
 } else {
+	aplicarRango(rango);
 	lucide.createIcons();
 	cargarDatos();
 }

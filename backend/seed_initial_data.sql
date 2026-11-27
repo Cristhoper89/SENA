@@ -21,8 +21,8 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.empresa (nombre, direccion, telefono, "NIT", correo)
 SELECT
-    'Restaurante Demo La Cabana',
-    'Calle 00 # 00-00, Pereira, Risaralda (PRUEBA)',
+    'Restaurante La Cabaña',
+    'Pereira, Risaralda',
     '0000000000',
     '000000000-0',
     'pruebas@example.invalid'

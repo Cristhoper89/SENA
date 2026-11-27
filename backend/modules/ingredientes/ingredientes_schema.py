@@ -40,6 +40,13 @@ class GastoResponse(GastoCreate):
 
     model_config = ConfigDict(from_attributes=True)
 
+class GastoPaginaResponse(BaseModel):
+    items: list[GastoResponse]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+    total_gastos: Decimal
 
 class GastoUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=1, max_length=100)

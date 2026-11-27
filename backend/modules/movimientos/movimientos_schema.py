@@ -3,7 +3,11 @@ from typing import Optional
 from decimal import Decimal
 from datetime import datetime
 from uuid import UUID
-from modules.metodos_pagos.metodo_pago_schema import MetodoPagoDetalle, MetodoPagoMovimientoEnum
+from modules.metodos_pagos.metodo_pago_schema import (
+    MetodoPagoDetalle,
+    MetodoPagoEnum,
+    MetodoPagoMovimientoEnum,
+)
 
 class MovimientoBase(BaseModel):
     estado: bool = Field(..., description="Estado del movimiento")
@@ -26,6 +30,31 @@ class MovimientoResponse(MovimientoBase):
     caja_estado: Optional[str] = Field(None, description="Estado de la caja asociada")
 
     model_config = ConfigDict(from_attributes=True)
+
+class MovimientoPaginaResponse(BaseModel):
+    items: list[MovimientoResponse]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+    total_ingresos: Decimal
+
+class MovimientoConsumoDetalle(BaseModel):
+    id: int
+    id_producto: int
+    cantidad: int
+    subtotal: Decimal
+    notas: Optional[str] = None
+
+class MovimientoPagoDetalleResponse(BaseModel):
+    id: int
+    movimiento_id: int
+    valor: Decimal
+    metodo: MetodoPagoEnum
+
+class MovimientoDetalleResponse(BaseModel):
+    consumos: list[MovimientoConsumoDetalle]
+    pagos: list[MovimientoPagoDetalleResponse]
 
 class MovimientoUpdate(BaseModel):
     estado: Optional[bool] = Field(None, description="Estado del movimiento")

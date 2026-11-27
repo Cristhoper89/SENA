@@ -25,11 +25,20 @@ These steps are for a new, empty PostgreSQL database. Do not run
 1. Run `schema_base.sql` from the PostgreSQL Query Tool or `psql` to create the
    tables, types, sequences, and constraints.
 2. Run `seed_initial_data.sql` to add the application roles, default
-   configuration, and a clearly marked demo company. It is safe to rerun and
-   does not overwrite existing rows. Replace the demo company values before
-   using it in production. Payment methods are enum values; `metodos_pagos`
+   configuration, and the initial company record. It is safe to rerun and
+   does not overwrite existing rows. Replace the company values before using
+   it in production. Payment methods are enum values; `metodos_pagos`
    stores payment details per movement and should remain empty initially.
-3. Start the backend and create the first administrator as described below.
+3. If you already ran an earlier demo seed, run `rename_demo_data.sql` once to
+   replace its visible demo labels. It aborts without changing anything if a
+   target name already exists.
+4. Optional, for a test database only: run `seed_demo_data.sql`. It adds sample
+   categories, ingredients, products, options, tables, expenses, and closed
+   cash registers with sales from 2023 through the current month. The script
+   appends data, does not delete existing rows, and creates an open cash
+   register only if none exists. It is safe to rerun; each demo month is added
+   once. Do not run it in production because it creates artificial sales.
+5. Start the backend and create the first administrator as described below.
    The application startup applies compatibility changes but does not create
    the base schema.
 

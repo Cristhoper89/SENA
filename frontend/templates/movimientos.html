@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="../static/css/base/variables.css">
     <link rel="stylesheet" href="../static/css/base/global.css">
     <link rel="stylesheet" href="../static/css/modules/dashboard.css?v=7">
-    <link rel="stylesheet" href="../static/css/modules/movimientos.css?v=4">
+    <link rel="stylesheet" href="../static/css/modules/movimientos.css?v=5">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
@@ -23,6 +23,7 @@
                 </div>
                 <div class="mov-actions">
                     <div class="mov-range" id="movRange" role="group" aria-label="Rango de fechas">
+                        <button class="mov-range-btn" type="button" data-range="all">Todo</button>
                         <button class="mov-range-btn" type="button" data-range="today">Hoy</button>
                         <button class="mov-range-btn" type="button" data-range="week">Esta semana</button>
                         <button class="mov-range-btn" type="button" data-range="month">Este mes</button>
@@ -33,6 +34,16 @@
                     </button>
                 </div>
             </header>
+
+            <section class="mov-date-filter" aria-label="Filtrar historial por fechas">
+                <label for="fechaDesde">Desde
+                    <input id="fechaDesde" type="date">
+                </label>
+                <label for="fechaHasta">Hasta
+                    <input id="fechaHasta" type="date">
+                </label>
+                <button class="btn-primary" id="btnFiltrarFechas" type="button">Filtrar fechas</button>
+            </section>
 
             <section class="mov-summary" aria-label="Resumen del periodo">
                 <article class="mov-summary-card income">
@@ -61,6 +72,22 @@
             </div>
 
             <section class="mov-list" id="movList" aria-live="polite"></section>
+            <nav class="mov-pagination" id="movPagination" aria-label="Paginación del historial" hidden>
+                <label for="movPageSize">Mostrar
+                    <select id="movPageSize">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                    por página
+                </label>
+                <span id="movPageInfo" aria-live="polite"></span>
+                <div class="mov-page-buttons">
+                    <button class="btn-secondary" id="movPagePrevious" type="button">Anterior</button>
+                    <button class="btn-secondary" id="movPageNext" type="button">Siguiente</button>
+                </div>
+            </nav>
 
             <p class="mov-message" id="movMessage" role="status"></p>
         </main>
@@ -106,6 +133,6 @@
     <script src="../static/js/api-config.js?v=1"></script>
     <script src="../static/js/permissions.js?v=3"></script>
     <script src="../static/js/menu.js?v=16"></script>
-    <script src="../static/js/movimientos.js?v=6"></script>
+    <script src="../static/js/movimientos.js?v=7"></script>
 </body>
 </html>

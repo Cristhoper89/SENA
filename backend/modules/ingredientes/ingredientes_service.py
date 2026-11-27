@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,6 +125,65 @@ class GastoService:
             """)
         )
         return [dict(row) for row in result.mappings().all()]
+
+    async def get_paginados(
+        self,
+        fecha_desde: date | None,
+        fecha_hasta: date | None,
+        page: int,
+        page_size: int,
+    ) -> dict:
+        conditions = []
+        filter_params = {}
+        if fecha_desde is not None:
+            conditions.append(
+                """g.fecha_hora >= (CAST(:fecha_desde AS date)::timestamp
+                   AT TIME ZONE 'America/Bogota')"""
+            )
+            filter_params["fecha_desde"] = fecha_desde
+        if fecha_hasta is not None:
+            conditions.append(
+                """g.fecha_hora < ((CAST(:fecha_hasta AS date) + 1)::timestamp
+                   AT TIME ZONE 'America/Bogota')"""
+            )
+            filter_params["fecha_hasta"] = fecha_hasta
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        summary_result = await self.db.execute(
+            text(f"""
+                SELECT COUNT(*) AS total,
+                       COALESCE(SUM(g.valor), 0) AS total_gastos
+                FROM public.gasto g
+                {where_clause};
+            """),
+            filter_params,
+        )
+        summary = summary_result.mappings().one()
+        page_params = {
+            **filter_params,
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
+        }
+        rows_result = await self.db.execute(
+            text(f"""
+                SELECT {self.columns}
+                FROM public.gasto g
+                LEFT JOIN public.categorias c ON c.id = g.categoria
+                {where_clause}
+                ORDER BY g.fecha_hora DESC NULLS LAST, g.id DESC
+                LIMIT :limit OFFSET :offset;
+            """),
+            page_params,
+        )
+        total = summary["total"]
+        return {
+            "items": [dict(row) for row in rows_result.mappings().all()],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "total_gastos": summary["total_gastos"],
+        }
 
     async def create(self, data: GastoCreate) -> dict:
         query = text(f"""
