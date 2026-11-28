@@ -51,6 +51,115 @@ class CajasService:
         result = await self.db.execute(query)
         return [dict(row) for row in result.mappings().all()]
 
+    async def get_comprobante(self, caja_id: int) -> dict:
+        caja_result = await self.db.execute(
+            text("""
+                SELECT id, fecha, ingresos_efectivo, ingresos_tarjeta, ingresos_transferencia,
+                       egresos_efectivo, egresos_tarjeta, egresos_transferencia, total_propinas,
+                       balance_inicial, balance_final, efectivo_contado, diferencia_caja,
+                       notas_cierre, estado
+                FROM caja
+                WHERE id = :id;
+            """),
+            {"id": caja_id},
+        )
+        caja = caja_result.mappings().first()
+        if caja is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La caja solicitada no existe.")
+        if str(caja["estado"]).strip().lower() != "cerrada":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El comprobante solo está disponible para cajas cerradas.")
+
+        sales_result = await self.db.execute(
+            text("""
+                WITH pagos_por_movimiento AS (
+                    SELECT
+                        movimiento_id,
+                        COUNT(*) AS cantidad_pagos,
+                        SUM(valor) AS total_pagos,
+                        SUM(CASE WHEN LOWER(TRIM(metodo::text)) = 'efectivo' THEN valor ELSE 0 END) AS efectivo
+                    FROM metodos_pagos
+                    GROUP BY movimiento_id
+                ),
+                ventas AS (
+                    SELECT
+                        m.total,
+                        m.propina,
+                        m.domicilio,
+                        m.metodo,
+                        GREATEST(COALESCE(m.total, 0) - COALESCE(m.domicilio, 0), 0) AS ingreso,
+                        COALESCE(p.cantidad_pagos, 0) AS cantidad_pagos,
+                        COALESCE(p.total_pagos, 0) AS total_pagos,
+                        COALESCE(p.efectivo, 0) AS pago_efectivo
+                    FROM movimiento m
+                    LEFT JOIN pagos_por_movimiento p ON p.movimiento_id = m.id
+                    WHERE m.id_caja = :id_caja
+                      AND m.estado IS DISTINCT FROM FALSE
+                      AND COALESCE(m.total, 0) > 0
+                )
+                SELECT
+                    COALESCE(SUM(ingreso), 0) AS ventas,
+                    COALESCE(SUM(propina), 0) AS propinas,
+                    COALESCE(SUM(domicilio), 0) AS domicilios,
+                    COUNT(*) AS ventas_count,
+                    COALESCE(SUM(CASE
+                        WHEN cantidad_pagos > 0 THEN pago_efectivo * ingreso / NULLIF(total_pagos, 0)
+                        WHEN LOWER(TRIM(metodo::text)) = 'efectivo' THEN ingreso
+                        ELSE 0
+                    END), 0) AS venta_efectivo
+                FROM ventas;
+            """),
+            {"id_caja": caja_id},
+        )
+        sales = sales_result.mappings().one()
+
+        expenses_result = await self.db.execute(
+            text("SELECT COALESCE(SUM(valor), 0) FROM gasto WHERE id_caja = :id_caja;"),
+            {"id_caja": caja_id},
+        )
+        recorded_expenses = expenses_result.scalar_one()
+        classified_expenses = sum((
+            caja["egresos_efectivo"] or 0,
+            caja["egresos_tarjeta"] or 0,
+            caja["egresos_transferencia"] or 0,
+        ))
+
+        discount_result = await self.db.execute(
+            text("""
+                SELECT COALESCE(SUM(mc.descuento * mc.cantidad), 0)
+                FROM mesa_consumo mc
+                JOIN movimiento m ON m.id = mc.id_mov
+                WHERE m.id_caja = :id_caja
+                  AND m.estado IS DISTINCT FROM FALSE
+                  AND COALESCE(m.total, 0) > 0;
+            """),
+            {"id_caja": caja_id},
+        )
+
+        has_sales = sales["ventas_count"] > 0
+        total_sales = sales["ventas"] if has_sales else sum((
+            caja["ingresos_efectivo"] or 0,
+            caja["ingresos_tarjeta"] or 0,
+            caja["ingresos_transferencia"] or 0,
+        ))
+        tips = sales["propinas"] if has_sales else caja["total_propinas"] or 0
+        domicilios = sales["domicilios"] if has_sales else None
+        cash_sales = sales["venta_efectivo"] if has_sales else caja["ingresos_efectivo"] or 0
+        expenses = max(recorded_expenses, classified_expenses)
+        discounts = discount_result.scalar_one() if has_sales else None
+
+        return {
+            "caja": dict(caja),
+            "ventas": total_sales,
+            "venta_efectivo": cash_sales,
+            "propinas": tips,
+            "domicilios": domicilios,
+            "gastos": expenses,
+            "descuentos": discounts,
+            "balance_final": caja["balance_final"] if caja["balance_final"] is not None else (
+                (caja["balance_inicial"] or 0) + total_sales - expenses - tips
+            ),
+        }
+
     async def create_caja(self, caja_data: CajasCreate) -> dict:
         logger.info(f"SQL Nativo: Insertando caja {caja_data.fecha}")
 

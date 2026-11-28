@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 class CajasBase(BaseModel):
@@ -54,3 +54,34 @@ class CajasCierreApertura(BaseModel):
 class CajasCierreAperturaResponse(BaseModel):
     caja_cerrada: CajasResponse
     caja_nueva: CajasResponse
+
+
+class CajasComprobanteCajaResponse(BaseModel):
+    id: int
+    fecha: date | datetime | None = None
+    ingresos_efectivo: Optional[float] = None
+    ingresos_tarjeta: Optional[float] = None
+    ingresos_transferencia: Optional[float] = None
+    egresos_efectivo: Optional[float] = None
+    egresos_tarjeta: Optional[float] = None
+    egresos_transferencia: Optional[float] = None
+    total_propinas: Optional[float] = None
+    balance_inicial: Optional[float] = None
+    balance_final: Optional[float] = None
+    efectivo_contado: Optional[float] = None
+    diferencia_caja: Optional[float] = None
+    notas_cierre: Optional[str] = None
+    estado: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CajasComprobanteResponse(BaseModel):
+    caja: CajasComprobanteCajaResponse
+    ventas: Decimal
+    venta_efectivo: Decimal
+    propinas: Decimal
+    domicilios: Optional[Decimal]
+    gastos: Decimal
+    descuentos: Optional[Decimal]
+    balance_final: Decimal

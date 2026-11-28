@@ -6,7 +6,7 @@
 		"caja", "caja.html", "cajas", "cajas.html", "categorias", "categorias.html",
 		"clientes", "clientes.html", "configuracion", "configuracion.html",
 		"configuracion-mesas", "configuracion-mesas.html", "cierre-caja",
-		"cierre-caja.html", "carta", "carta.html", "desbloquear", "desbloquear_cuenta.html",
+		"cierre-caja.html", "factura-cierre", "factura-cierre.html", "carta", "carta.html", "desbloquear", "desbloquear_cuenta.html",
 		"gastos", "gastos.html", "ingredientes", "ingredientes.html", "mesas",
 		"mesas.html", "movimientos", "movimientos.html", "olvido_contrasena",
 		"olvido_contrasena.html", "olvido-contrasena", "opciones-productos", "opciones_productos.html",

@@ -6,6 +6,7 @@ from modules.cajas.cajas_schema import (
     CajasCreate,
     CajasCierreApertura,
     CajasCierreAperturaResponse,
+    CajasComprobanteResponse,
     CajasResponse,
     CajasUpdate,
 )
@@ -79,6 +80,18 @@ async def close_caja(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado. Rol insuficiente.")
     service = CajasService(db)
     return await service.cerrar_caja(caja_id)
+
+
+@router.get("/{caja_id}/comprobante", response_model=CajasComprobanteResponse, status_code=status.HTTP_200_OK)
+async def read_caja_comprobante(
+    caja_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user["role_name"] not in ["Administrador", "Cajero"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado. Rol insuficiente.")
+    service = CajasService(db)
+    return await service.get_comprobante(caja_id)
 
 
 @router.post("/{caja_id}/cierre-apertura", response_model=CajasCierreAperturaResponse, status_code=status.HTTP_200_OK)

@@ -51,7 +51,7 @@ function renderCajaHistory() {
 	document.getElementById("cajaCount").textContent = `${visibleCajas.length} ${visibleCajas.length === 1 ? "caja" : "cajas"}`;
 	const table = document.getElementById("historyTable");
 	if (!visibleCajas.length) {
-		table.innerHTML = `<tr><td colspan="8" class="loading">${cajaHistory.length ? "No hay cajas que coincidan con los filtros." : "No hay cajas registradas."}</td></tr>`;
+		table.innerHTML = `<tr><td colspan="9" class="loading">${cajaHistory.length ? "No hay cajas que coincidan con los filtros." : "No hay cajas registradas."}</td></tr>`;
 		return;
 	}
 
@@ -90,6 +90,7 @@ function renderCajaHistory() {
 			<td>${historyMoney(tips)}</td>
 			<td>${historyMoney(finalBalance)}</td>
 			<td><span class="status-badge ${isOpen ? "open" : "closed"}">${isOpen ? "Abierta" : "Cerrada"}</span></td>
+			<td>${isOpen ? "—" : `<a class="btn-secondary" href="/factura-cierre?id=${encodeURIComponent(caja.id)}">Ver comprobante</a>`}</td>
 		</tr>`;
 	}).join("");
 }
@@ -118,7 +119,7 @@ async function loadCajaHistory() {
 	} catch (error) {
 		message.textContent = error instanceof Error ? error.message : "No fue posible cargar el historial de cajas.";
 		message.className = "caja-message error";
-		document.getElementById("historyTable").innerHTML = '<tr><td colspan="8" class="loading">No se pudo cargar el historial.</td></tr>';
+		document.getElementById("historyTable").innerHTML = '<tr><td colspan="9" class="loading">No se pudo cargar el historial.</td></tr>';
 	}
 }
 

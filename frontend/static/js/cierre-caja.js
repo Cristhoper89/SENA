@@ -157,7 +157,7 @@ async function closeActiveCash() {
 	setCashFlowMessage("");
 	try {
 		await cashFlowRequest(`/cajas/${activeCash.id}/cierre`, {method: "POST"});
-		window.CabanaRoutes.navigate("/caja");
+		window.CabanaRoutes.navigate(`/factura-cierre?id=${encodeURIComponent(activeCash.id)}`);
 	} catch (error) {
 		setCashFlowMessage(error instanceof Error ? error.message : "No fue posible cerrar la caja.", "error");
 		button.disabled = false;

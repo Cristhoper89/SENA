@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comprobante de cierre de caja | Cabaña</title>
+    <link rel="stylesheet" href="../static/css/base/variables.css">
+    <link rel="stylesheet" href="../static/css/base/global.css">
+    <link rel="stylesheet" href="../static/css/modules/factura-cierre.css?v=1">
+</head>
+<body>
+    <main class="receipt-page">
+        <nav class="receipt-actions" aria-label="Acciones del comprobante">
+            <a class="receipt-back" href="/caja">Volver a caja</a>
+            <button class="receipt-print" id="printReceipt" type="button" disabled>Imprimir / Guardar PDF</button>
+        </nav>
+
+        <p class="receipt-status" id="receiptStatus" role="status" aria-live="polite">Cargando comprobante...</p>
+
+        <article class="receipt" id="receipt" hidden>
+            <header class="receipt-header">
+                <h1 id="companyName">Comprobante de cierre de caja</h1>
+                <p id="companyDetails"></p>
+                <h2>CIERRE DE CAJA</h2>
+                <p class="receipt-subtitle">Comprobante interno; no sustituye una factura electrónica.</p>
+            </header>
+
+            <section class="receipt-meta" aria-label="Datos del cierre">
+                <div><span>ID CAJA</span><strong id="receiptCashId"></strong></div>
+                <div><span>FECHA APERTURA</span><strong id="receiptOpenedAt"></strong></div>
+                <div><span>FECHA CIERRE</span><strong>No disponible en la base de datos</strong></div>
+                <div><span>FECHA IMPRESIÓN</span><strong id="receiptPrintedAt"></strong></div>
+                <div><span>GENERADO POR</span><strong id="receiptOperator"></strong></div>
+            </section>
+
+            <section class="receipt-lines" aria-label="Resumen de caja">
+                <div class="receipt-line"><span>VALOR APERTURA</span><strong id="receiptOpening"></strong></div>
+                <div class="receipt-line"><span>VENTA CONTADO</span><strong id="receiptCashSales"></strong></div>
+                <div class="receipt-line"><span>TOTAL VENTA</span><strong id="receiptSales"></strong></div>
+                <div class="receipt-line"><span>PROPINA (TOTAL)</span><strong id="receiptTips"></strong></div>
+                <div class="receipt-line"><span>DOMICILIOS</span><strong id="receiptDomicilios"></strong></div>
+                <div class="receipt-line"><span>TOTAL DESCUENTO</span><strong id="receiptDiscounts"></strong></div>
+                <div class="receipt-line"><span>TOTAL GASTOS</span><strong id="receiptExpenses"></strong></div>
+                <div class="receipt-line receipt-total"><span>VALOR CIERRE / BALANCE FINAL</span><strong id="receiptBalance"></strong></div>
+            </section>
+
+            <section class="receipt-extra">
+                <div><span>FACTURAS INICIAL / FINAL</span><strong>No disponible</strong></div>
+                <div><span>TOTAL INGRESOS</span><strong>No disponible</strong></div>
+                <div><span>PROPINA EFECTIVO / OTROS</span><strong>No disponible</strong></div>
+            </section>
+
+            <footer class="receipt-limitations">
+                <h2>DATOS QUE NO SE PUDIERON INCLUIR Y POR QUÉ</h2>
+                <ul id="receiptLimitations"></ul>
+            </footer>
+        </article>
+    </main>
+    <script src="../static/js/api-config.js?v=1"></script>
+    <script src="../static/js/factura-cierre.js?v=1"></script>
+</body>
+</html>
